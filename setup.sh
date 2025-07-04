@@ -753,6 +753,32 @@ EOF"
     echo "   • Consulta logs en: ~/.config/cursor/"
 }
 
+# Función para mostrar el menú de selección de Docker
+choose_docker_installation() {
+    echo "Se detectó que deseas instalar herramientas de Docker."
+    echo "Por favor, selecciona UNA de las siguientes opciones:"
+    echo "  1) Docker CLI solamente (Engine, Compose, Buildx) - Recomendado para servidores"
+    echo "  2) Docker Desktop (incluye GUI y Docker CLI) - Recomendado para desarrollo"
+    echo "  0) Omitir instalación de Docker"
+    echo -n "Tu elección (1-2): "
+    read -r docker_choice
+    
+    case $docker_choice in
+        1)
+            install_docker_cli
+            ;;
+        2)
+            install_docker_desktop_with_dependencies
+            ;;
+        0)
+            echo "Omitiendo instalación de Docker."
+            ;;
+        *)
+            echo "Opción inválida. Omitiendo instalación de Docker."
+            ;;
+    esac
+}
+
 install_docker_cli() {
     print_header "Instalando Docker CLI (Engine, Compose, Buildx, containerd)"
 
@@ -760,7 +786,7 @@ install_docker_cli() {
         ubuntu|debian|kali|parrot)
             echo "Configurando repositorio oficial de Docker para Debian/Ubuntu/Kali/Parrot..."
             run_command "sudo apt-get update"
-            run_command "sudo apt-get install -y ca-certificates curl gnupg lsb-release" # lsb-release para UBUNTU_CODENAME
+            run_command "sudo apt-get install -y ca-certificates curl gnupg lsb-release"
             run_command "sudo install -m 0755 -d /etc/apt/keyrings"
             run_command "sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc"
             run_command "sudo chmod a+r /etc/apt/keyrings/docker.asc"
@@ -786,13 +812,18 @@ install_docker_cli() {
         fedora)
             echo "Configurando repositorio oficial de Docker para Fedora..."
             run_command "sudo dnf -y install dnf-plugins-core"
-            run_command "sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo"
+            
+            # Usar curl en lugar de dnf config-manager para mejor compatibilidad
+            echo "Añadiendo repositorio de Docker..."
+            run_command "sudo curl -fsSL https://download.docker.com/linux/fedora/docker-ce.repo -o /etc/yum.repos.d/docker-ce.repo"
+            
+            run_command "sudo dnf makecache"
             echo "Instalando Docker Engine y complementos..."
             run_command "sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
             ;;
         arch)
             echo "Instalando Docker CLI y complementos con pacman en Arch Linux..."
-            run_command "sudo pacman -S --noconfirm docker docker-compose" # docker-compose es el plugin
+            run_command "sudo pacman -S --noconfirm docker docker-compose"
             ;;
         opensuse)
             echo "Instalando Docker CLI y complementos con zypper en openSUSE..."
@@ -830,13 +861,23 @@ install_docker_cli() {
     echo "  Reiniciar tu sesión (cerrar y volver a iniciar) o reiniciar el sistema."
 }
 
-install_docker_desktop() {
-    print_header "Instalando Docker Desktop"
+install_docker_desktop_with_dependencies() {
+    print_header "Instalando Docker Desktop (incluye Docker CLI como dependencia)"
+
+    # Primero instalar Docker CLI si no está presente
+    if ! command -v docker &> /dev/null; then
+        echo "Docker CLI no detectado. Instalando primero Docker CLI..."
+        install_docker_cli
+        if [ $? -ne 0 ]; then
+            echo "Error: Fallo al instalar Docker CLI. Docker Desktop requiere Docker CLI." >&2
+            return 1
+        fi
+    fi
 
     local DOCKER_DESKTOP_URL=""
     local DOCKER_DESKTOP_PACKAGE=""
 
-    # Verificar arquitectura (asumimos amd64 por los enlaces, pero es buena práctica)
+    # Verificar arquitectura
     local ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
     if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "x86_64" ]; then
         echo "Advertencia: Docker Desktop se está intentando instalar en una arquitectura ($ARCH) no AMD64." >&2
@@ -848,8 +889,7 @@ install_docker_desktop() {
         ubuntu|debian|kali|parrot)
             echo "Descargando Docker Desktop para Debian/Ubuntu..."
             DOCKER_DESKTOP_PACKAGE="docker-desktop-amd64.deb"
-            
-DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_PACKAGE?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-linux-amd64"
+            DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_PACKAGE?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-linux-amd64"
             
             run_command "wget -q --show-progress -O /tmp/$DOCKER_DESKTOP_PACKAGE \"$DOCKER_DESKTOP_URL\""
             echo "Instalando paquete Docker Desktop..."
@@ -859,8 +899,7 @@ DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_
         fedora)
             echo "Descargando Docker Desktop para Fedora..."
             DOCKER_DESKTOP_PACKAGE="docker-desktop-x86_64.rpm"
-            
-DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_PACKAGE?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-linux-amd64"
+            DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_PACKAGE?utm_source=docker&utm_medium=webreferral&utm_campaign=docs-driven-download-linux-amd64"
             
             run_command "wget -q --show-progress -O /tmp/$DOCKER_DESKTOP_PACKAGE \"$DOCKER_DESKTOP_URL\""
             echo "Instalando paquete Docker Desktop..."
@@ -885,8 +924,6 @@ DOCKER_DESKTOP_URL="https://desktop.docker.com/linux/main/amd64/$DOCKER_DESKTOP_
     echo "  2. Iniciar Docker Desktop desde tu menú de aplicaciones."
     echo "Puedes verificar la instalación abriendo una nueva terminal y ejecutando 'docker run hello-world'."
 }
-
-
 install_fonts() {
     print_header "Instalando Fuentes: Cascadia Code y Caskaydia Cove"
 
@@ -2508,7 +2545,7 @@ main() {
             12) install_brave_browser ;;
             13) install_cursor_appimage ;;
             14) install_docker_cli ;;
-            15) install_docker_desktop ;;
+            15) install_docker_desktop_with_dependencies ;;
             16) install_fonts ;;
             17) configure_firewall_ssh ;;
             18) install_vscode ;;
@@ -2519,7 +2556,7 @@ main() {
                 print_header "Instalando TODAS las herramientas"
                 echo "Nota: La opción 'Instalar Node.js y NPM Globalmente (sin NVM)' NO se incluye en 'Instalar TODAS las herramientas' para evitar 
 conflictos."
-                echo "Además, Docker CLI y Docker Desktop son mutuamente excluyentes en la instalación automática 'Todo'. Se instalará Docker CLI."
+                echo "Se te preguntará qué tipo de Docker instalar (CLI o Desktop) durante la instalación 'Todo'. automática."
                 sleep 2
                 
                 # Priorizar actualizaciones y utilidades base
@@ -2545,7 +2582,7 @@ conflictos."
                 install_warp_terminal || echo "Advertencia: Fallo en Warp Terminal. Continuando con otras instalaciones."
                 install_chrome_dev || echo "Advertencia: Fallo en Chrome Dev. Continuando con otras instalaciones."
                 install_rustdesk || echo "Advertencia: Fallo en RustDesk. Continuando con otras instalaciones."
-                install_docker_cli || echo "Advertencia: Fallo en Docker CLI. Continuando con otras instalaciones."
+                choose_docker_installation || echo "Advertencia: Fallo en la instalación de Docker. Continuando con otras instalaciones."
                 configure_firewall_ssh || echo "Advertencia: Fallo en la configuración del firewall. Continuando con otras instalaciones."
                 install_fonts || echo "Advertencia: Fallo en la instalación de fuentes. Continuando con otras instalaciones."
 
