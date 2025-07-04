@@ -167,7 +167,7 @@ install_basic_utilities() {
             else
                 echo "Debian versión anterior. Intentando instalar fastfetch desde el repositorio estándar."
                 run_command "$INSTALL_COMMAND fastfetch"
-            F
+           fi
             ;;
         fedora)
             run_command "$INSTALL_COMMAND fastfetch"
@@ -242,8 +242,7 @@ configure_gitconfig() {
 	defaultBranch = main
 [alias]
 	s = status -s -b
-	lg = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim 
-white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
+	lg = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
 	edit = commit --amend
 	clone-shallow = clone --depth 1
 [pull]
@@ -418,9 +417,8 @@ install_nodejs_global_without_nvm() {
             fi
 
             # Añadir repositorio NodeSource
-            echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee 
-/etc/apt/sources.list.d/nodesource.list >/dev/null
-            echo "deb-src [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee -a 
+            echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee /etc/apt/sources.list.d/nodesource.list >/dev/null
+            echo "deb-src [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee -a /etc/apt/sources.list.d/nodesource.list >/dev/null
 /etc/apt/sources.list.d/nodesource.list >/dev/null
             
             run_command "sudo apt-get update -y"
@@ -500,8 +498,7 @@ install_github_cli() {
             run_command "rm $TEMP_KEYRING_FILE"
             run_command "sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg"
             run_command "sudo mkdir -p -m 755 /etc/apt/sources.list.d"
-            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] 
-https://cli.github.com/packages stable main\" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null"
+            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null"
             run_command "sudo apt update -y"
             run_command "sudo apt install -y gh"
             ;;
@@ -572,23 +569,76 @@ install_brave_browser() {
 
 install_cursor_appimage() {
     print_header "Instalando Cursor (AI Code Editor) AppImage"
+    
+    echo "📁 NOTA: Esta función busca archivos AppImage de Cursor en el directorio actual."
+    echo ""
+    echo "💾 Para instalar Cursor necesitas:"
+    echo "  • Archivo AppImage de Cursor (ej: Cursor-*.AppImage)"
+    echo "  • Descarga desde: https://cursor.com/en/downloads"
+    echo "  • Coloca el archivo en este directorio: $(pwd)"
+    echo ""
+    echo "📋 Nombres de archivo esperados:"
+    echo "  • Cursor-0.x.x-x86_64.AppImage"
+    echo "  • cursor-latest.AppImage"
+    echo "  • Cursor.AppImage"
+    echo ""
+
+    # Verificar si Cursor ya está instalado
+    if [ -f "/opt/cursor.appimage" ]; then
+        echo "✓ Cursor ya está instalado en /opt/cursor.appimage"
+        read -p "¿Deseas reinstalar Cursor? (y/N): " reinstall_cursor
+        if [[ ! "$reinstall_cursor" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Cursor cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+        echo ""
+    fi
 
     # 1. Buscar el archivo AppImage en el directorio actual
     local CURSOR_APPIMAGE_SOURCE=$(find . -maxdepth 1 -type f -iname "Cursor*.AppImage" | head -n 1)
 
     if [ -z "$CURSOR_APPIMAGE_SOURCE" ]; then
-        echo "Error: No se encontró ningún archivo Cursor AppImage en el directorio actual." >&2
-        echo "Por favor, descarga el AppImage de Cursor (versión x64) desde https://cursor.com/en/downloads"
-        echo "y colócalo en el mismo directorio donde ejecutas este script antes de intentar instalarlo."
+        echo "❌ Error: No se encontró ningún archivo Cursor AppImage en el directorio actual."
+        echo ""
+        echo "📥 Para instalar Cursor:"
+        echo "1. Visita https://cursor.com/en/downloads"
+        echo "2. Descarga la versión AppImage para Linux (x64)"
+        echo "3. Coloca el archivo en este directorio: $(pwd)"
+        echo "4. Ejecuta nuevamente esta opción"
+        echo ""
+        echo "🔍 El script buscará archivos con nombres como:"
+        echo "  • Cursor-*.AppImage"
+        echo "  • cursor*.AppImage (cualquier variación)"
+        echo ""
+        echo "💡 Tip: Asegúrate de que el archivo tenga permisos de lectura"
+        echo "       y no esté corrupto (debería ser ~100MB o más)"
         return 1
     fi
 
-    echo "AppImage de Cursor encontrado: $CURSOR_APPIMAGE_SOURCE"
+    echo "✓ AppImage de Cursor encontrado: $CURSOR_APPIMAGE_SOURCE"
+    
+    # Verificar tamaño del archivo (AppImage de Cursor debe ser relativamente grande)
+    local file_size=$(du -m "$CURSOR_APPIMAGE_SOURCE" | cut -f1)
+    if [ "$file_size" -lt 50 ]; then
+        echo "⚠️  Advertencia: El archivo es muy pequeño ($file_size MB)."
+        echo "    Un AppImage típico de Cursor debería ser ~100MB o más."
+        read -p "¿Deseas continuar de todos modos? (y/N): " continue_small
+        if [[ ! "$continue_small" =~ ^[Yy]$ ]]; then
+            echo "Instalación cancelada. Verifica que descargaste el archivo correcto."
+            return 1
+        fi
+    else
+        echo "✓ Tamaño del archivo verificado: ${file_size}MB"
+    fi
+    echo ""
 
     # 2. Instalar dependencia FUSE
-    echo "Verificando e instalando dependencia FUSE (libfuse2)..."
+    echo "=== Instalando dependencias necesarias ==="
+    echo "Verificando e instalando dependencia FUSE (requerida para AppImages)..."
     case $PACKAGE_MANAGER in
         apt)
+            run_command "sudo apt update -y"
             run_command "sudo apt install -y libfuse2"
             ;;
         dnf)
@@ -604,38 +654,103 @@ install_cursor_appimage() {
             run_command "sudo apk add --no-cache fuse2-libs" # Para Alpine
             ;;
         *)
-            echo "Advertencia: La instalación de FUSE para $PACKAGE_MANAGER no está implementada. Podría ser necesaria la instalación manual de 
-libfuse2/fuse-libs/fuse2."
+            echo "⚠️  Advertencia: La instalación automática de FUSE para $PACKAGE_MANAGER no está implementada."
+            echo "    Podría ser necesaria la instalación manual de libfuse2/fuse-libs/fuse2."
+            echo "    Si Cursor no funciona después de la instalación, instala FUSE manualmente."
             ;;
     esac
 
     # 3. Mover y hacer ejecutable
-    echo "Moviendo Cursor AppImage a /opt/cursor.appimage y haciendo ejecutable..."
+    echo ""
+    echo "=== Instalando Cursor AppImage ==="
+    echo "Moviendo Cursor AppImage a /opt/cursor.appimage..."
+    
+    # Hacer backup si ya existe
+    if [ -f "/opt/cursor.appimage" ]; then
+        run_command "sudo mv /opt/cursor.appimage /opt/cursor.appimage.backup.$(date +%Y%m%d_%H%M%S)"
+        echo "✓ Backup del Cursor anterior creado"
+    fi
+    
     run_command "sudo mv \"$CURSOR_APPIMAGE_SOURCE\" /opt/cursor.appimage"
     run_command "sudo chmod +x /opt/cursor.appimage"
+    echo "✓ Cursor AppImage instalado en /opt/cursor.appimage"
 
-    # 4. Crear entrada de escritorio
+    # 4. Crear symlink para comando global
+    echo "Creando comando global 'cursor'..."
+    if [ -L "/usr/local/bin/cursor" ] || [ -f "/usr/local/bin/cursor" ]; then
+        run_command "sudo rm -f /usr/local/bin/cursor"
+    fi
+    run_command "sudo ln -sf /opt/cursor.appimage /usr/local/bin/cursor"
+    echo "✓ Comando 'cursor' disponible globalmente"
+
+    # 5. Crear entrada de escritorio
     echo "Creando entrada de escritorio para Cursor..."
     local CURSOR_DESKTOP_ENTRY="/usr/share/applications/cursor.desktop"
-    sudo bash -c "cat > $CURSOR_DESKTOP_ENTRY <<EOF
+    sudo bash -c "cat > $CURSOR_DESKTOP_ENTRY << EOF
 [Desktop Entry]
 Name=Cursor
-Exec=/opt/cursor.appimage --no-sandbox # Se añade --no-sandbox por seguridad/compatibilidad
-Icon=/opt/cursor.png # Requerirá un icono. Instrucciones para usuario.
+Comment=AI-powered code editor
+Exec=/opt/cursor.appimage --no-sandbox %F
+Icon=cursor
 Type=Application
-Categories=Development;IDE;
+Categories=Development;IDE;TextEditor;
+MimeType=text/plain;text/x-chdr;text/x-csrc;text/x-c++hdr;text/x-c++src;
+StartupNotify=true
+StartupWMClass=cursor
 EOF"
-    run_command "sudo chmod 644 $CURSOR_DESKTOP_ENTRY" # Permisos de lectura
+    run_command "sudo chmod 644 $CURSOR_DESKTOP_ENTRY"
+    echo "✓ Entrada de escritorio creada"
 
-    # 5. Instrucción para el icono
-    echo "--- PASO MANUAL PARA EL ICONO ---"
-    echo "Para que el icono de Cursor aparezca, necesitas descargar un archivo 'cursor.png' (por ejemplo, el logo de Cursor) y colocarlo en /opt/."
-    echo "Comando sugerido (después de descargar el .png en tu carpeta actual):"
-    echo "  sudo cp ~/Downloads/cursor.png /opt/cursor.png"
-    echo "---------------------------------"
+    # 6. Intentar extraer icono (opcional)
+    echo ""
+    echo "=== Configuración adicional ==="
+    echo "Intentando configurar icono de Cursor..."
+    
+    # Verificar si AppImage tiene herramientas de extracción
+    if /opt/cursor.appimage --appimage-help &>/dev/null; then
+        echo "Extrayendo icono desde el AppImage..."
+        if /opt/cursor.appimage --appimage-extract "*.png" 2>/dev/null | head -1; then
+            local ICON_FILE=$(find squashfs-root -name "*.png" | head -1)
+            if [ -n "$ICON_FILE" ]; then
+                run_command "sudo cp \"$ICON_FILE\" /opt/cursor.png"
+                echo "✓ Icono extraído y configurado"
+                run_command "rm -rf squashfs-root"
+            fi
+        fi
+    else
+        echo "📋 Configuración manual del icono (opcional):"
+        echo "   Para añadir un icono personalizado:"
+        echo "   1. Descarga un icono PNG de Cursor"
+        echo "   2. Ejecuta: sudo cp /ruta/al/icono.png /opt/cursor.png"
+        echo "   3. Edita: sudo nano /usr/share/applications/cursor.desktop"
+        echo "   4. Cambia 'Icon=cursor' por 'Icon=/opt/cursor.png'"
+    fi
 
-    echo "Cursor instalado. Puede que necesites reiniciar tu sesión para ver el icono en el menú de aplicaciones."
-    echo "Para ejecutarlo desde la terminal: /opt/cursor.appimage --no-sandbox"
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ Cursor (AI Code Editor) instalado exitosamente"
+    echo ""
+    echo "🚀 Para usar Cursor:"
+    echo "  • Desde terminal: cursor"
+    echo "  • Desde terminal (directo): /opt/cursor.appimage"
+    echo "  • Desde el menú de aplicaciones: Cursor"
+    echo "  • Para abrir un proyecto: cursor /ruta/al/proyecto"
+    echo ""
+    echo "🎯 Características principales de Cursor:"
+    echo "  • Editor de código con IA integrada"
+    echo "  • Autocompletado inteligente con AI"
+    echo "  • Chat con IA sobre tu código"
+    echo "  • Refactoring asistido por IA"
+    echo "  • Compatible con extensiones de VS Code"
+    echo "  • Interfaz familiar para usuarios de VS Code"
+    echo ""
+    echo "⚠️  Nota: En el primer inicio, Cursor podría solicitar permisos"
+    echo "   adicionales y descargar componentes necesarios."
+    echo ""
+    echo "🔧 Si experimentas problemas:"
+    echo "   • Verifica que FUSE esté instalado"
+    echo "   • Ejecuta con: /opt/cursor.appimage --no-sandbox"
+    echo "   • Consulta logs en: ~/.config/cursor/"
 }
 
 install_docker_cli() {
@@ -662,8 +777,7 @@ install_docker_cli() {
             fi
 
             echo "Añadiendo repositorio de Docker para $DISTRO_CODENAME..."
-            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu 
-${DISTRO_CODENAME} stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
+            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${DISTRO_CODENAME} stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
             
             run_command "sudo apt-get update -y"
             echo "Instalando Docker Engine y complementos..."
@@ -782,87 +896,1520 @@ install_fonts() {
     # Install fontconfig for managing fonts if not present
     case $PACKAGE_MANAGER in
         apt)
-            run_command "sudo apt install -y fontconfig"
+            if ! command -v fc-cache &> /dev/null; then
+                run_command "sudo apt install -y fontconfig"
+            fi
             ;;
         dnf)
-            run_command "sudo dnf install -y fontconfig"
+            if ! command -v fc-cache &> /dev/null; then
+                run_command "sudo dnf install -y fontconfig"
+            fi
             ;;
         pacman)
-            run_command "sudo pacman -S --noconfirm fontconfig"
+            if ! command -v fc-cache &> /dev/null; then
+                run_command "sudo pacman -S --noconfirm fontconfig"
+            fi
             ;;
         zypper)
-            run_command "sudo zypper install -y fontconfig"
+            if ! command -v fc-cache &> /dev/null; then
+                run_command "sudo zypper install -y fontconfig"
+            fi
             ;;
         apk)
-            run_command "sudo apk add --no-cache fontconfig"
+            if ! command -v fc-cache &> /dev/null; then
+                run_command "sudo apk add --no-cache fontconfig"
+            fi
             ;;
     esac
 
-    # Cascadia Code (latest stable release)
-    echo "Descargando e instalando Cascadia Code..."
-    local CASCADIA_URL="https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip"
-    local CASCADIA_ZIP="/tmp/CascadiaCode.zip"
-    local CASCADIA_EXTRACT_DIR="/tmp/CascadiaCode_extracted"
-
-    if command -v wget &> /dev/null; then
-        run_command "wget -q --show-progress -O \"$CASCADIA_ZIP\" \"$CASCADIA_URL\""
-    elif command -v curl &> /dev/null; then
-        run_command "curl -L -o \"$CASCADIA_ZIP\" \"$CASCADIA_URL\""
+    # Check if Cascadia Code is already installed
+    echo "Verificando si Cascadia Code ya está instalada..."
+    if fc-list | grep -i "cascadia code" &> /dev/null; then
+        echo "✓ Cascadia Code ya está instalada. Omitiendo descarga."
     else
-        echo "Error: Ni wget ni curl están instalados. No se pueden descargar las fuentes." >&2
-        return 1
+        echo "Descargando e instalando Cascadia Code..."
+        local CASCADIA_URL="https://github.com/microsoft/cascadia-code/releases/download/v2404.23/CascadiaCode-2404.23.zip"
+        local CASCADIA_ZIP="/tmp/CascadiaCode.zip"
+        local CASCADIA_EXTRACT_DIR="/tmp/CascadiaCode_extracted"
+
+        if command -v wget &> /dev/null; then
+            run_command "wget -q --show-progress -O \"$CASCADIA_ZIP\" \"$CASCADIA_URL\""
+        elif command -v curl &> /dev/null; then
+            run_command "curl -L -o \"$CASCADIA_ZIP\" \"$CASCADIA_URL\""
+        else
+            echo "Error: Ni wget ni curl están instalados. No se pueden descargar las fuentes." >&2
+            return 1
+        fi
+
+        run_command "unzip -o \"$CASCADIA_ZIP\" -d \"$CASCADIA_EXTRACT_DIR\""
+        run_command "cp \"$CASCADIA_EXTRACT_DIR\"/ttf/*.ttf \"$FONT_DIR\"/" # Copy TTF files
+        run_command "rm -rf \"$CASCADIA_ZIP\" \"$CASCADIA_EXTRACT_DIR\""
+        echo "✓ Cascadia Code instalado."
     fi
 
-    run_command "unzip -o \"$CASCADIA_ZIP\" -d \"$CASCADIA_EXTRACT_DIR\""
-    run_command "cp \"$CASCADIA_EXTRACT_DIR\"/ttf/*.ttf \"$FONT_DIR\"/" # Copy TTF files
-    run_command "rm -rf \"$CASCADIA_ZIP\" \"$CASCADIA_EXTRACT_DIR\""
-    echo "Cascadia Code instalado."
-
-    # Caskaydia Cove Nerd Font (patched Cascadia Code) - get latest stable
-    echo "Descargando e instalando Caskaydia Cove Nerd Font..."
-    local CAS_COVE_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/CaskaydiaCove.zip"
-    local CAS_COVE_ZIP="/tmp/CaskaydiaCove.zip"
-    local CAS_COVE_EXTRACT_DIR="/tmp/CaskaydiaCove_extracted"
-
-    if command -v wget &> /dev/null; then
-        run_command "wget -q --show-progress -O \"$CAS_COVE_ZIP\" \"$CAS_COVE_URL\""
-    elif command -v curl &> /dev/null; then
-        run_command "curl -L -o \"$CAS_COVE_ZIP\" \"$CAS_COVE_URL\""
+    # Check if Caskaydia Cove Nerd Font is already installed
+    echo "Verificando si Caskaydia Cove Nerd Font ya está instalada..."
+    if fc-list | grep -i "cascadia.*nf\|caskaydia" &> /dev/null; then
+        echo "✓ Caskaydia Cove Nerd Font ya está instalada. Omitiendo descarga."
     else
-        echo "Error: Ni wget ni curl están instalados. No se pueden descargar las fuentes." >&2
-        return 1
-    fi
+        echo "Descargando e instalando Caskaydia Cove Nerd Font..."
+        # Updated URL to use the correct release and naming
+        local CAS_COVE_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/CascadiaCode.zip"
+        local CAS_COVE_ZIP="/tmp/CascadiaCodeNerd.zip"
+        local CAS_COVE_EXTRACT_DIR="/tmp/CascadiaCodeNerd_extracted"
 
-    run_command "unzip -o \"$CAS_COVE_ZIP\" -d \"$CAS_COVE_EXTRACT_DIR\""
-    run_command "cp \"$CAS_COVE_EXTRACT_DIR\"/*.ttf \"$FONT_DIR\"/" # Copy TTF files
-    run_command "rm -rf \"$CAS_COVE_ZIP\" \"$CAS_COVE_EXTRACT_DIR\""
-    echo "Caskaydia Cove Nerd Font instalado."
+        if command -v wget &> /dev/null; then
+            run_command "wget -q --show-progress -O \"$CAS_COVE_ZIP\" \"$CAS_COVE_URL\""
+        elif command -v curl &> /dev/null; then
+            run_command "curl -L -o \"$CAS_COVE_ZIP\" \"$CAS_COVE_URL\""
+        else
+            echo "Error: Ni wget ni curl están instalados. No se pueden descargar las fuentes." >&2
+            return 1
+        fi
+
+        run_command "unzip -o \"$CAS_COVE_ZIP\" -d \"$CAS_COVE_EXTRACT_DIR\""
+        # Copy only TTF files (Nerd Fonts typically include both TTF and OTF)
+        if ls "$CAS_COVE_EXTRACT_DIR"/*.ttf &> /dev/null; then
+            run_command "cp \"$CAS_COVE_EXTRACT_DIR\"/*.ttf \"$FONT_DIR\"/"
+        fi
+        # Also copy OTF files if they exist
+        if ls "$CAS_COVE_EXTRACT_DIR"/*.otf &> /dev/null; then
+            run_command "cp \"$CAS_COVE_EXTRACT_DIR\"/*.otf \"$FONT_DIR\"/"
+        fi
+        run_command "rm -rf \"$CAS_COVE_ZIP\" \"$CAS_COVE_EXTRACT_DIR\""
+        echo "✓ Caskaydia Cove Nerd Font instalado."
+    fi
     
     echo "Actualizando la caché de fuentes..."
     run_command "fc-cache -fv"
 
-    echo "Fuentes Cascadia Code y Caskaydia Cove instaladas."
-    echo "Puede que necesites configurar tu terminal o editor para usar estas nuevas fuentes."
-    echo "Nota: La instalación de fuentes tipo 'Mac late 2014' no se realiza automáticamente debido a su naturaleza propietaria. Puedes buscar 
-alternativas open source como Fira Code, Hack o Roboto Mono."
+    echo ""
+    echo "=== Resumen de fuentes instaladas ==="
+    echo "Verificando fuentes de Cascadia disponibles:"
+    fc-list | grep -i cascadia || echo "  No se encontraron fuentes de Cascadia (esto podría ser normal si el nombre interno es diferente)"
+    
+    echo ""
+    echo "✓ Instalación de fuentes completada."
+    echo "Para usar estas fuentes en tu terminal o editor:"
+    echo "  - Cascadia Code: 'Cascadia Code'"
+    echo "  - Caskaydia Cove Nerd Font: 'CaskaydiaCove Nerd Font' o 'Cascadia Code NF'"
+    echo ""
+    echo "Nota: Puede que necesites reiniciar tu terminal o editor para ver las nuevas fuentes."
 }
 
+install_vscode() {
+    print_header "Instalando Visual Studio Code"
+    
+    # Verificar si VS Code ya está instalado
+    if command -v code &> /dev/null; then
+        echo "✓ Visual Studio Code ya está instalado."
+        echo "Versión actual: $(code --version | head -n1)"
+        read -p "¿Deseas reinstalar o actualizar VS Code? (y/N): " reinstall_vscode
+        if [[ ! "$reinstall_vscode" =~ ^[Yy]$ ]]; then
+            echo "Instalación de VS Code cancelada."
+            return 0
+        fi
+        echo "Procediendo con la instalación/actualización..."
+    fi
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            echo "Instalando VS Code para Debian/Ubuntu usando repositorio oficial de Microsoft..."
+            
+            # Instalar dependencias necesarias
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y wget gpg software-properties-common apt-transport-https"
+            
+            # Añadir clave GPG de Microsoft
+            echo "Añadiendo clave GPG de Microsoft..."
+            if [ ! -f /etc/apt/keyrings/packages.microsoft.gpg ]; then
+                run_command "wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg"
+                run_command "sudo install -o root -g root -m 644 packages.microsoft.gpg /etc/apt/keyrings/"
+                run_command "rm packages.microsoft.gpg"
+            else
+                echo "✓ Clave GPG de Microsoft ya existe."
+            fi
+            
+            # Añadir repositorio de VS Code
+            echo "Configurando repositorio de VS Code..."
+            if [ ! -f /etc/apt/sources.list.d/vscode.list ]; then
+                run_command "echo \"deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main\" | sudo tee /etc/apt/sources.list.d/vscode.list"
+            else
+                echo "✓ Repositorio de VS Code ya está configurado."
+            fi
+            
+            # Actualizar e instalar
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y code"
+            ;;
+            
+        fedora)
+            echo "Instalando VS Code para Fedora usando repositorio oficial de Microsoft..."
+            
+            # Importar clave GPG de Microsoft
+            echo "Importando clave GPG de Microsoft..."
+            run_command "sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
+            
+            # Añadir repositorio de VS Code
+            echo "Configurando repositorio de VS Code..."
+            if [ ! -f /etc/yum.repos.d/vscode.repo ]; then
+                sudo bash -c 'cat > /etc/yum.repos.d/vscode.repo << EOF
+[code]
+name=Visual Studio Code
+baseurl=https://packages.microsoft.com/yumrepos/vscode
+enabled=1
+gpgcheck=1
+gpgkey=https://packages.microsoft.com/keys/microsoft.asc
+EOF'
+                echo "✓ Repositorio de VS Code configurado."
+            else
+                echo "✓ Repositorio de VS Code ya existe."
+            fi
+            
+            # Instalar VS Code
+            run_command "sudo dnf install -y code"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando VS Code para Arch Linux..."
+            
+            # VS Code está disponible en AUR, usando el paquete visual-studio-code-bin
+            if command -v yay &> /dev/null; then
+                echo "Usando yay para instalar desde AUR..."
+                run_command "yay -S --noconfirm visual-studio-code-bin"
+            elif command -v paru &> /dev/null; then
+                echo "Usando paru para instalar desde AUR..."
+                run_command "paru -S --noconfirm visual-studio-code-bin"
+            else
+                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
+                echo "Instalando desde el paquete snap como alternativa..."
+                if command -v snap &> /dev/null; then
+                    run_command "sudo snap install --classic code"
+                else
+                    echo "Error: Ni AUR helpers ni snap están disponibles." >&2
+                    echo "Por favor, instala VS Code manualmente desde https://code.visualstudio.com/"
+                    return 1
+                fi
+            fi
+            ;;
+            
+        opensuse|sles)
+            echo "Instalando VS Code para openSUSE usando repositorio oficial de Microsoft..."
+            
+            # Importar clave GPG
+            run_command "sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
+            
+            # Añadir repositorio
+            echo "Configurando repositorio de VS Code..."
+            if ! sudo zypper lr | grep -q "vscode"; then
+                run_command "sudo zypper addrepo https://packages.microsoft.com/yumrepos/vscode vscode"
+                run_command "sudo zypper refresh"
+            else
+                echo "✓ Repositorio de VS Code ya existe."
+            fi
+            
+            # Instalar VS Code
+            run_command "sudo zypper install -y code"
+            ;;
+            
+        alpine)
+            echo "Instalando VS Code para Alpine Linux usando snap..."
+            
+            # Alpine no tiene un repositorio oficial, usamos snap
+            if ! command -v snap &> /dev/null; then
+                echo "Instalando snapd primero..."
+                run_command "sudo apk add --no-cache snapd"
+                run_command "sudo systemctl enable --now snapd"
+                run_command "sudo systemctl enable --now snapd.apparmor"
+            fi
+            
+            run_command "sudo snap install --classic code"
+            ;;
+            
+        *)
+            echo "Distribución $DISTRO no reconocida. Intentando instalación universal con snap..."
+            
+            if command -v snap &> /dev/null; then
+                run_command "sudo snap install --classic code"
+            else
+                echo "Error: Distribución no soportada y snap no está disponible." >&2
+                echo "Por favor, descarga VS Code manualmente desde:"
+                echo "  https://code.visualstudio.com/download"
+                return 1
+            fi
+            ;;
+    esac
+    
+    # Verificar instalación
+    echo ""
+    echo "=== Verificando instalación ==="
+    if command -v code &> /dev/null; then
+        echo "✓ Visual Studio Code instalado correctamente."
+        echo "Versión: $(code --version | head -n1)"
+        echo ""
+        echo "Para abrir VS Code:"
+        echo "  - Desde terminal: code"
+        echo "  - Desde terminal con carpeta: code ."
+        echo "  - Desde el menú de aplicaciones: Visual Studio Code"
+        echo ""
+        echo "Extensiones recomendadas para desarrollo:"
+        echo "  - GitLens"
+        echo "  - Prettier - Code formatter"
+        echo "  - Auto Rename Tag"
+        echo "  - Bracket Pair Colorizer 2"
+        echo "  - Material Icon Theme"
+        echo "  - Thunder Client (alternativa a Postman)"
+        echo ""
+        echo "Para instalar extensiones desde terminal:"
+        echo "  code --install-extension ms-vscode.vscode-json"
+    else
+        echo "❌ Error: VS Code no se instaló correctamente."
+        return 1
+    fi
+}
+install_warp_terminal() {
+    print_header "Instalando Warp Terminal"
+    
+    echo "📁 NOTA: Esta función busca archivos de instalación locales de Warp Terminal"
+    echo "en el mismo directorio donde ejecutas este script."
+    echo ""
+    echo "Para instalar Warp Terminal necesitas:"
+    echo "  • Para Ubuntu/Debian: archivo .deb (ej: warp-terminal_*.deb)"
+    echo "  • Para Fedora/RHEL: archivo .rpm (ej: warp-terminal_*.rpm)"
+    echo ""
+    echo "Descarga el archivo apropiado desde https://www.warp.dev/ y colócalo"
+    echo "en este directorio antes de ejecutar esta opción."
+    echo ""
+    
+    # Verificar si Warp Terminal ya está instalado
+    if command -v warp-terminal &> /dev/null || command -v warp &> /dev/null; then
+        echo "✓ Warp Terminal ya está instalado."
+        echo "Versión actual: $(warp-terminal --version 2>/dev/null || warp --version 2>/dev/null || echo 'No disponible')"
+        read -p "¿Deseas reinstalar Warp Terminal? (y/N): " reinstall_warp
+        if [[ ! "$reinstall_warp" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Warp Terminal cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+        echo ""
+    fi
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            echo "=== Buscando archivo .deb de Warp Terminal ==="
+            
+            # Buscar archivos .deb de Warp Terminal en el directorio actual
+            local WARP_DEB_FILE=$(find . -maxdepth 1 -type f -iname "*warp*terminal*.deb" -o -iname "*warp*.deb" | head -n 1)
+            
+            if [ -z "$WARP_DEB_FILE" ]; then
+                echo "❌ Error: No se encontró ningún archivo .deb de Warp Terminal en el directorio actual."
+                echo ""
+                echo "📥 Para instalar Warp Terminal:"
+                echo "1. Visita https://www.warp.dev/"
+                echo "2. Descarga el archivo .deb para Linux"
+                echo "3. Coloca el archivo en este directorio: $(pwd)"
+                echo "4. Ejecuta nuevamente esta opción"
+                echo ""
+                echo "Ejemplo de nombres de archivo esperados:"
+                echo "  • warp-terminal_1.0.0_amd64.deb"
+                echo "  • warp_terminal-latest.deb"
+                echo "  • warp-linux.deb"
+                return 1
+            fi
+            
+            echo "✓ Archivo de Warp Terminal encontrado: $WARP_DEB_FILE"
+            echo ""
+            
+            # Verificar que el archivo es un DEB válido
+            if file "$WARP_DEB_FILE" | grep -q "Debian binary package"; then
+                echo "✓ Archivo .deb válido confirmado."
+                
+                # Instalar dependencias necesarias
+                echo "Instalando dependencias necesarias..."
+                run_command "sudo apt update -y"
+                run_command "sudo apt install -y libfuse2" # FUSE podría ser necesario
+                
+                # Instalar Warp Terminal
+                echo "Instalando Warp Terminal..."
+                run_command "sudo dpkg -i \"$WARP_DEB_FILE\""
+                
+                # Resolver dependencias si es necesario
+                echo "Resolviendo dependencias..."
+                run_command "sudo apt-get install -f -y"
+                
+                echo "✓ Instalación de Warp Terminal completada."
+            else
+                echo "❌ Error: El archivo '$WARP_DEB_FILE' no es un paquete .deb válido."
+                echo "Por favor, verifica que descargaste el archivo correcto desde https://www.warp.dev/"
+                return 1
+            fi
+            ;;
+            
+        fedora|centos|rhel)
+            echo "=== Buscando archivo .rpm de Warp Terminal ==="
+            
+            # Buscar archivos .rpm de Warp Terminal en el directorio actual
+            local WARP_RPM_FILE=$(find . -maxdepth 1 -type f -iname "*warp*terminal*.rpm" -o -iname "*warp*.rpm" | head -n 1)
+            
+            if [ -z "$WARP_RPM_FILE" ]; then
+                echo "❌ Error: No se encontró ningún archivo .rpm de Warp Terminal en el directorio actual."
+                echo ""
+                echo "📥 Para instalar Warp Terminal:"
+                echo "1. Visita https://www.warp.dev/"
+                echo "2. Descarga el archivo .rpm para Linux"
+                echo "3. Coloca el archivo en este directorio: $(pwd)"
+                echo "4. Ejecuta nuevamente esta opción"
+                echo ""
+                echo "Ejemplo de nombres de archivo esperados:"
+                echo "  • warp-terminal-1.0.0.x86_64.rpm"
+                echo "  • warp_terminal-latest.rpm"
+                echo "  • warp-linux.rpm"
+                return 1
+            fi
+            
+            echo "✓ Archivo de Warp Terminal encontrado: $WARP_RPM_FILE"
+            echo ""
+            
+            # Verificar que el archivo es un RPM válido
+            if file "$WARP_RPM_FILE" | grep -q "RPM"; then
+                echo "✓ Archivo .rpm válido confirmado."
+                
+                # Instalar Warp Terminal
+                echo "Instalando Warp Terminal..."
+                if command -v dnf &> /dev/null; then
+                    run_command "sudo dnf install -y \"$WARP_RPM_FILE\""
+                else
+                    run_command "sudo rpm -i \"$WARP_RPM_FILE\""
+                fi
+                
+                echo "✓ Instalación de Warp Terminal completada."
+            else
+                echo "❌ Error: El archivo '$WARP_RPM_FILE' no es un paquete .rpm válido."
+                echo "Por favor, verifica que descargaste el archivo correcto desde https://www.warp.dev/"
+                return 1
+            fi
+            ;;
+            
+        arch|manjaro)
+            echo "=== Instalación para Arch Linux ==="
+            echo ""
+            echo "Para Arch Linux se recomienda usar AUR:"
+            echo ""
+            if command -v yay &> /dev/null; then
+                echo "Usando yay para instalar desde AUR..."
+                run_command "yay -S --noconfirm warp-terminal-bin"
+            elif command -v paru &> /dev/null; then
+                echo "Usando paru para instalar desde AUR..."
+                run_command "paru -S --noconfirm warp-terminal-bin"
+            else
+                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
+                echo ""
+                echo "Instalación manual requerida:"
+                echo "1. Instala yay: pacman -S yay"
+                echo "2. Ejecuta: yay -S warp-terminal-bin"
+                echo ""
+                echo "Alternativamente, puedes colocar un archivo .tar.xz de Warp Terminal"
+                echo "en este directorio y ejecutar nuevamente esta opción."
+                return 1
+            fi
+            ;;
+            
+        *)
+            echo "=== Distribución no soportada oficialmente ==="
+            echo ""
+            echo "Para distribuciones no estándar, buscaremos archivos genéricos:"
+            echo ""
+            
+            # Buscar cualquier archivo de instalación de Warp
+            local WARP_FILE=$(find . -maxdepth 1 -type f \( -iname "*warp*terminal*" -o -iname "*warp*" \) \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" -o -name "*.tar.xz" -o -name "*.AppImage" \) | head -n 1)
+            
+            if [ -z "$WARP_FILE" ]; then
+                echo "❌ Error: No se encontró ningún archivo de instalación de Warp Terminal."
+                echo ""
+                echo "📥 Archivos soportados:"
+                echo "  • .deb (Debian/Ubuntu)"
+                echo "  • .rpm (Fedora/RHEL)"
+                echo "  • .tar.gz/.tar.xz (Genérico)"
+                echo "  • .AppImage (Universal)"
+                echo ""
+                echo "Descarga desde https://www.warp.dev/ y coloca el archivo aquí."
+                return 1
+            fi
+            
+            echo "✓ Archivo encontrado: $WARP_FILE"
+            echo "⚠️  Instalación manual requerida para esta distribución."
+            echo "Por favor, instala manualmente el archivo encontrado."
+            ;;
+    esac
+    
+    # Verificar instalación
+    echo ""
+    echo "=== Verificando instalación ==="
+    if command -v warp-terminal &> /dev/null; then
+        echo "✓ Warp Terminal instalado correctamente."
+        echo "Versión: $(warp-terminal --version 2>/dev/null || echo 'Disponible')"
+        echo ""
+        echo "Para abrir Warp Terminal:"
+        echo "  - Desde terminal: warp-terminal"
+        echo "  - Desde el menú de aplicaciones: Warp Terminal"
+        echo ""
+        echo "🎉 Características de Warp Terminal:"
+        echo "  • Terminal moderno con IA integrada"
+        echo "  • Autocompletado inteligente"
+        echo "  • Colaboración en tiempo real"
+        echo "  • Historial de comandos mejorado"
+        echo "  • Interfaz moderna y personalizable"
+        echo "  • Bloques de comandos organizados"
+    elif command -v warp &> /dev/null; then
+        echo "✓ Warp Terminal instalado correctamente."
+        echo "Comando disponible: warp"
+        echo ""
+        echo "Para abrir Warp Terminal:"
+        echo "  - Desde terminal: warp"
+        echo "  - Desde el menú de aplicaciones: Warp"
+    else
+        echo "⚠️  Warp Terminal podría haberse instalado pero no está en el PATH."
+        echo "Intenta reiniciar tu terminal o buscar 'Warp' en el menú de aplicaciones."
+        echo ""
+        echo "Si el problema persiste:"
+        echo "1. Verifica que el archivo descargado sea compatible con tu sistema"
+        echo "2. Consulta la documentación oficial en https://www.warp.dev/"
+        echo "3. Considera usar una alternativa como Alacritty o Kitty"
+    fi
+}
+
+install_alacritty_alternative() {
+    echo ""
+    echo "=== Instalando Alacritty (Alternativa moderna a Warp) ==="
+    
+    case $PACKAGE_MANAGER in
+        apt)
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y alacritty"
+            ;;
+        dnf)
+            run_command "sudo dnf install -y alacritty"
+            ;;
+        pacman)
+            run_command "sudo pacman -S --noconfirm alacritty"
+            ;;
+        zypper)
+            run_command "sudo zypper install -y alacritty"
+            ;;
+        apk)
+            run_command "sudo apk add --no-cache alacritty"
+            ;;
+        *)
+            echo "Gestor de paquetes no soportado para Alacritty."
+            return 1
+            ;;
+    esac
+    
+    if command -v alacritty &> /dev/null; then
+        echo "✓ Alacritty instalado correctamente."
+        echo ""
+        echo "Para usar Alacritty:"
+        echo "  - Desde terminal: alacritty"
+        echo "  - Desde el menú de aplicaciones: Alacritty"
+        echo ""
+        echo "Características de Alacritty:"
+        echo "  - Terminal extremadamente rápido (GPU-accelerated)"
+        echo "  - Configuración via YAML"
+        echo "  - Multiplataforma"
+        echo "  - Soporte para ligaduras de fuentes"
+        echo "  - Configuración altamente personalizable"
+    else
+        echo "❌ Error al instalar Alacritty."
+        return 1
+    fi
+}
+
+install_kitty_alternative() {
+    echo ""
+    echo "=== Instalando Kitty (Alternativa moderna a Warp) ==="
+    
+    case $PACKAGE_MANAGER in
+        apt)
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y kitty"
+            ;;
+        dnf)
+            run_command "sudo dnf install -y kitty"
+            ;;
+        pacman)
+            run_command "sudo pacman -S --noconfirm kitty"
+            ;;
+        zypper)
+            run_command "sudo zypper install -y kitty"
+            ;;
+        apk)
+            run_command "sudo apk add --no-cache kitty"
+            ;;
+        *)
+            echo "Gestor de paquetes no soportado para Kitty."
+            return 1
+            ;;
+    esac
+    
+    if command -v kitty &> /dev/null; then
+        echo "✓ Kitty instalado correctamente."
+        echo ""
+        echo "Para usar Kitty:"
+        echo "  - Desde terminal: kitty"
+        echo "  - Desde el menú de aplicaciones: Kitty"
+        echo ""
+        echo "Características de Kitty:"
+        echo "  - Terminal con aceleración GPU"
+        echo "  - Soporte para imágenes y gráficos"
+        echo "  - Múltiples pestañas y ventanas"
+        echo "  - Ligaduras de fuentes"
+        echo "  - Scripting avanzado"
+    else
+        echo "❌ Error al instalar Kitty."
+        return 1
+    fi
+}
+
+install_wezterm_alternative() {
+    echo ""
+    echo "=== Instalando WezTerm (Alternativa moderna a Warp) ==="
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            echo "Instalando WezTerm para Ubuntu/Debian..."
+            
+            # Añadir repositorio oficial de WezTerm
+            run_command "curl -fsSL https://apt.fury.io/wez/gpg.key | sudo gpg --yes --dearmor -o /etc/apt/keyrings/wezterm-fury.gpg"
+            run_command "echo 'deb [signed-by=/etc/apt/keyrings/wezterm-fury.gpg] https://apt.fury.io/wez/ * *' | sudo tee /etc/apt/sources.list.d/wezterm.list"
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y wezterm"
+            ;;
+        fedora)
+            echo "Instalando WezTerm para Fedora..."
+            run_command "sudo dnf copr enable -y wezterm/wezterm-nightly"
+            run_command "sudo dnf install -y wezterm"
+            ;;
+        arch|manjaro)
+            echo "Instalando WezTerm para Arch Linux..."
+            if command -v yay &> /dev/null; then
+                run_command "yay -S --noconfirm wezterm"
+            elif command -v paru &> /dev/null; then
+                run_command "paru -S --noconfirm wezterm"
+            else
+                run_command "sudo pacman -S --noconfirm wezterm"
+            fi
+            ;;
+        *)
+            echo "Distribución no soportada para WezTerm con repositorio oficial."
+            echo "Intentando instalación con Flatpak..."
+            if command -v flatpak &> /dev/null; then
+                run_command "flatpak install -y flathub org.wezfurlong.wezterm"
+            else
+                echo "Flatpak no disponible. Instalación manual requerida."
+                return 1
+            fi
+            ;;
+    esac
+    
+    if command -v wezterm &> /dev/null; then
+        echo "✓ WezTerm instalado correctamente."
+        echo ""
+        echo "Para usar WezTerm:"
+        echo "  - Desde terminal: wezterm"
+        echo "  - Desde el menú de aplicaciones: WezTerm"
+        echo ""
+        echo "Características de WezTerm:"
+        echo "  - Terminal multiplataforma moderno"
+        echo "  - Configuración con Lua"
+        echo "  - Múltiples pestañas y paneles"
+        echo "  - Ligaduras de fuentes avanzadas"
+        echo "  - Rendimiento optimizado"
+    else
+        echo "❌ Error al instalar WezTerm."
+        return 1
+    fi
+}
+
+show_manual_warp_instructions() {
+    echo ""
+    echo "=== Instalación manual de Warp Terminal ==="
+    echo ""
+    echo "Warp Terminal está principalmente disponible para macOS."
+    echo "Para Linux, puedes:"
+    echo ""
+    echo "1. Únete a la lista de espera de Warp para Linux:"
+    echo "   https://www.warp.dev/"
+    echo ""
+    echo "2. Usar alternativas modernas recomendadas:"
+    echo "   - Alacritty: Terminal rápido con aceleración GPU"
+    echo "   - Kitty: Terminal con características avanzadas"
+    echo "   - WezTerm: Terminal multiplataforma moderno"
+    echo "   - Hyper: Terminal basado en Electron"
+    echo "   - Terminator: Terminal con múltiples paneles"
+    echo ""
+    echo "3. Comandos de instalación rápida:"
+    echo "   sudo apt install alacritty    # Para Alacritty"
+    echo "   sudo apt install kitty        # Para Kitty"
+    echo "   sudo apt install terminator   # Para Terminator"
+    echo ""
+    echo "Todas estas alternativas ofrecen características modernas"
+    echo "similares a las que buscarías en Warp Terminal."
+}
+
+install_warp_snap() {
+    echo "Intentando instalación con snap..."
+    
+    # Verificar si snap está disponible
+    if ! command -v snap &> /dev/null; then
+        echo "Instalando snapd..."
+        case $PACKAGE_MANAGER in
+            apt)
+                run_command "sudo apt update -y" || return 1
+                run_command "sudo apt install -y snapd" || return 1
+                ;;
+            dnf)
+                run_command "sudo dnf install -y snapd" || return 1
+                run_command "sudo systemctl enable --now snapd" || return 1
+                run_command "sudo ln -sf /var/lib/snapd/snap /snap" || return 1
+                ;;
+            pacman)
+                echo "⚠️  Para Arch Linux, instala snapd manualmente con:"
+                echo "    yay -S snapd"
+                echo "    sudo systemctl enable --now snapd"
+                return 1
+                ;;
+            zypper)
+                echo "Configurando snap para openSUSE..."
+                run_command "sudo zypper addrepo --refresh https://download.opensuse.org/repositories/system:/snappy/openSUSE_Leap_15.6 snappy" || return 1
+                run_command "sudo zypper --gpg-auto-import-keys refresh" || return 1
+                run_command "sudo zypper install -y snapd" || return 1
+                run_command "sudo systemctl enable --now snapd" || return 1
+                ;;
+            apk)
+                echo "⚠️  Snap no está disponible oficialmente para Alpine Linux."
+                return 1
+                ;;
+            *)
+                echo "⚠️  No se puede instalar snapd automáticamente en esta distribución."
+                return 1
+                ;;
+        esac
+        
+        # Esperar a que snapd se inicie completamente
+        echo "Esperando a que snapd se inicie..."
+        sleep 3
+    fi
+    
+    # Instalar Warp con snap
+    echo "Instalando Warp Terminal con snap..."
+    if run_command "sudo snap install warp-terminal"; then
+        echo "✓ Warp Terminal instalado vía snap."
+        return 0
+    else
+        echo "❌ Falló la instalación con snap."
+        return 1
+    fi
+}
+
+install_warp_flatpak() {
+    echo "Intentando instalación con Flatpak..."
+    
+    # Verificar si flatpak está disponible
+    if ! command -v flatpak &> /dev/null; then
+        echo "Instalando Flatpak..."
+        case $PACKAGE_MANAGER in
+            apt)
+                run_command "sudo apt update -y" || return 1
+                run_command "sudo apt install -y flatpak" || return 1
+                ;;
+            dnf)
+                run_command "sudo dnf install -y flatpak" || return 1
+                ;;
+            pacman)
+                run_command "sudo pacman -S --noconfirm flatpak" || return 1
+                ;;
+            zypper)
+                run_command "sudo zypper install -y flatpak" || return 1
+                ;;
+            apk)
+                run_command "sudo apk add --no-cache flatpak" || return 1
+                ;;
+            *)
+                echo "⚠️  No se puede instalar Flatpak automáticamente en esta distribución."
+                return 1
+                ;;
+        esac
+    fi
+    
+    # Añadir Flathub si no está presente
+    if ! flatpak remotes 2>/dev/null | grep -q flathub; then
+        echo "Añadiendo repositorio Flathub..."
+        run_command "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo" || return 1
+    fi
+    
+    # Instalar Warp con Flatpak
+    echo "Instalando Warp Terminal con Flatpak..."
+    if run_command "flatpak install -y flathub dev.warp.Warp"; then
+        echo "✓ Warp Terminal instalado vía Flatpak."
+        return 0
+    else
+        echo "❌ Falló la instalación con Flatpak."
+        return 1
+    fi
+}
+
+show_warp_info() {
+    echo ""
+    echo "Para abrir Warp Terminal:"
+    if command -v warp-terminal &> /dev/null; then
+        echo "  - Desde terminal: warp-terminal"
+    elif command -v warp &> /dev/null; then
+        echo "  - Desde terminal: warp"
+    elif snap list 2>/dev/null | grep -q warp-terminal; then
+        echo "  - Desde terminal: warp-terminal"
+    elif flatpak list 2>/dev/null | grep -q warp; then
+        echo "  - Desde terminal: flatpak run dev.warp.Warp"
+    fi
+    echo "  - Desde el menú de aplicaciones: Warp"
+    echo ""
+    echo "Características principales de Warp:"
+    echo "  - Terminal moderno con IA integrada"
+    echo "  - Autocompletado inteligente"
+    echo "  - Colaboración en tiempo real"
+    echo "  - Historial de comandos mejorado"
+    echo "  - Interfaz moderna y personalizable"
+}
+
+show_manual_warp_instructions() {
+    echo ""
+    echo "=== Instalación manual de Warp Terminal ==="
+    echo ""
+    echo "Métodos alternativos de instalación:"
+    echo ""
+    echo "1. Descargar desde el sitio oficial:"
+    echo "   https://www.warp.dev/"
+    echo ""
+    echo "2. Usar snap (si está disponible):"
+    echo "   sudo snap install warp-terminal"
+    echo ""
+    echo "3. Usar Flatpak (si está disponible):"
+    echo "   flatpak install flathub dev.warp.Warp"
+    echo ""
+    echo "4. Para Arch Linux con AUR:"
+    echo "   yay -S warp-terminal-bin"
+    echo ""
+    echo "Nota: Warp Terminal está en desarrollo activo para Linux"
+    echo "y la disponibilidad puede variar según la distribución."
+}
+
+install_warp_snap() {
+    echo "Instalando Warp Terminal usando snap..."
+    
+    # Verificar si snap está disponible
+    if ! command -v snap &> /dev/null; then
+        echo "Instalando snapd..."
+        case $PACKAGE_MANAGER in
+            apt)
+                run_command "sudo apt update -y"
+                run_command "sudo apt install -y snapd"
+                ;;
+            dnf)
+                run_command "sudo dnf install -y snapd"
+                run_command "sudo systemctl enable --now snapd"
+                run_command "sudo ln -sf /var/lib/snapd/snap /snap"
+                ;;
+            pacman)
+                echo "⚠️  Para Arch Linux, instala snapd manualmente:"
+                echo "    yay -S snapd"
+                echo "    sudo systemctl enable --now snapd"
+                return 1
+                ;;
+            zypper)
+                run_command "sudo zypper addrepo --refresh https://download.opensuse.org/repositories/system:/snappy/openSUSE_Leap_15.2 snappy"
+                run_command "sudo zypper --gpg-auto-import-keys refresh"
+                run_command "sudo zypper dup --from snappy"
+                run_command "sudo zypper install snapd"
+                ;;
+            apk)
+                echo "⚠️  Snap no está disponible oficialmente para Alpine Linux."
+                echo "Por favor, instala Warp manualmente desde https://www.warp.dev/"
+                return 1
+                ;;
+        esac
+    fi
+    
+    # Instalar Warp con snap
+    echo "Instalando Warp Terminal con snap..."
+    run_command "sudo snap install warp-terminal"
+    
+    echo "✓ Warp Terminal instalado vía snap."
+}
+
+install_warp_appimage() {
+    echo "Instalando Warp Terminal como AppImage..."
+    
+    # Crear directorio para AppImages
+    local APPIMAGE_DIR="/opt"
+    local WARP_APPIMAGE="$APPIMAGE_DIR/warp-terminal.appimage"
+    
+    # Instalar FUSE si es necesario
+    echo "Verificando dependencias para AppImage..."
+    case $PACKAGE_MANAGER in
+        apt)
+            run_command "sudo apt install -y libfuse2"
+            ;;
+        dnf)
+            run_command "sudo dnf install -y fuse-libs"
+            ;;
+        pacman)
+            run_command "sudo pacman -S --noconfirm fuse2"
+            ;;
+        zypper)
+            run_command "sudo zypper install -y fuse-libs"
+            ;;
+        apk)
+            run_command "sudo apk add --no-cache fuse2-libs"
+            ;;
+    esac
+    
+    # Descargar AppImage
+    echo "Descargando Warp Terminal AppImage..."
+    if command -v wget &> /dev/null; then
+        run_command "sudo wget -q --show-progress -O $WARP_APPIMAGE 'https://app.warp.dev/get_warp?package=appimage'"
+    elif command -v curl &> /dev/null; then
+        run_command "sudo curl -L -o $WARP_APPIMAGE 'https://app.warp.dev/get_warp?package=appimage'"
+    else
+        echo "Error: Ni wget ni curl están instalados." >&2
+        return 1
+    fi
+    
+    # Hacer ejecutable
+    run_command "sudo chmod +x $WARP_APPIMAGE"
+    
+    # Crear entrada de escritorio
+    echo "Creando entrada de escritorio..."
+    local DESKTOP_ENTRY="/usr/share/applications/warp-terminal.desktop"
+    sudo bash -c "cat > $DESKTOP_ENTRY << EOF
+[Desktop Entry]
+Name=Warp Terminal
+Exec=$WARP_APPIMAGE
+Icon=warp-terminal
+Type=Application
+Categories=Development;TerminalEmulator;
+Terminal=false
+Comment=A modern terminal built for developers
+EOF"
+    
+    run_command "sudo chmod 644 $DESKTOP_ENTRY"
+    
+    # Crear symlink para comando
+    if [ ! -L /usr/local/bin/warp-terminal ]; then
+        run_command "sudo ln -sf $WARP_APPIMAGE /usr/local/bin/warp-terminal"
+    fi
+    
+    echo "✓ Warp Terminal AppImage instalado en $WARP_APPIMAGE"
+    echo "✓ Comando disponible: warp-terminal"
+}
+install_rustdesk() {
+    print_header "Instalando RustDesk"
+    
+    # Verificar si RustDesk ya está instalado
+    if command -v rustdesk &> /dev/null; then
+        echo "✓ RustDesk ya está instalado."
+        echo "Versión actual: $(rustdesk --version 2>/dev/null || echo 'No disponible')"
+        read -p "¿Deseas reinstalar o actualizar RustDesk? (y/N): " reinstall_rustdesk
+        if [[ ! "$reinstall_rustdesk" =~ ^[Yy]$ ]]; then
+            echo "Instalación de RustDesk cancelada."
+            return 0
+        fi
+        echo "Procediendo con la instalación/actualización..."
+    fi
+    
+    # Versión actual de RustDesk
+    local RUSTDESK_VERSION="1.4.0"
+    local BASE_URL="https://github.com/rustdesk/rustdesk/releases/download/$RUSTDESK_VERSION"
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            echo "Instalando RustDesk para Debian/Ubuntu..."
+            
+            # Crear directorio temporal
+            local TEMP_DIR="/tmp/rustdesk_install"
+            run_command "mkdir -p $TEMP_DIR"
+            
+            # Detectar arquitectura
+            local ARCH=$(dpkg --print-architecture)
+            local RUSTDESK_DEB=""
+            
+            case $ARCH in
+                amd64)
+                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-x86_64.deb"
+                    ;;
+                arm64)
+                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-aarch64.deb"
+                    ;;
+                armhf)
+                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-armv7.deb"
+                    ;;
+                *)
+                    echo "Arquitectura $ARCH no soportada para RustDesk."
+                    return 1
+                    ;;
+            esac
+            
+            # Descargar RustDesk
+            echo "Descargando RustDesk $RUSTDESK_VERSION para $ARCH..."
+            if command -v wget &> /dev/null; then
+                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_DEB $BASE_URL/$RUSTDESK_DEB"
+            elif command -v curl &> /dev/null; then
+                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_DEB $BASE_URL/$RUSTDESK_DEB"
+            else
+                echo "Error: Ni wget ni curl están instalados." >&2
+                return 1
+            fi
+            
+            # Verificar descarga
+            if [ -f "$TEMP_DIR/$RUSTDESK_DEB" ] && [ -s "$TEMP_DIR/$RUSTDESK_DEB" ]; then
+                echo "✓ Archivo descargado correctamente."
+                
+                
+                # Instalar dependencias conocidas de RustDesk
+                echo "Instalando dependencias necesarias para RustDesk..."
+                run_command "sudo apt update -y"
+                run_command "sudo apt install -y libxdo3 libgtk-3-0 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0"
+                
+                # Instalar RustDesk
+                echo "Instalando RustDesk..."
+                run_command "sudo dpkg -i $TEMP_DIR/$RUSTDESK_DEB"
+                
+                # Resolver dependencias
+                echo "Resolviendo dependencias..."
+                run_command "sudo apt-get install -f -y"
+            else
+                echo "❌ Error al descargar RustDesk."
+                return 1
+            fi
+            
+            # Limpiar
+            run_command "rm -rf $TEMP_DIR"
+            ;;
+            
+        fedora|centos|rhel)
+            echo "Instalando RustDesk para Fedora/RHEL..."
+            
+            local TEMP_DIR="/tmp/rustdesk_install"
+            run_command "mkdir -p $TEMP_DIR"
+            
+            # RustDesk RPM para x86_64
+            local RUSTDESK_RPM="rustdesk-${RUSTDESK_VERSION}-0.x86_64.rpm"
+            
+            echo "Descargando RustDesk $RUSTDESK_VERSION..."
+            if command -v wget &> /dev/null; then
+                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_RPM $BASE_URL/$RUSTDESK_RPM"
+            elif command -v curl &> /dev/null; then
+                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_RPM $BASE_URL/$RUSTDESK_RPM"
+            else
+                echo "Error: Ni wget ni curl están instalados." >&2
+                return 1
+            fi
+            
+            # Instalar RustDesk
+            if [ -f "$TEMP_DIR/$RUSTDESK_RPM" ] && [ -s "$TEMP_DIR/$RUSTDESK_RPM" ]; then
+                
+                # Instalar dependencias conocidas de RustDesk para Fedora
+                echo "Instalando dependencias necesarias para RustDesk..."
+                run_command "sudo dnf install -y libxdo gtk3 gstreamer1 gstreamer1-plugins-base"
+                
+                echo "Instalando RustDesk..."
+                if command -v dnf &> /dev/null; then
+                    run_command "sudo dnf install -y $TEMP_DIR/$RUSTDESK_RPM"
+                else
+                    run_command "sudo rpm -i $TEMP_DIR/$RUSTDESK_RPM"
+                fi
+            else
+                echo "❌ Error al descargar RustDesk."
+                return 1
+            fi
+            
+            run_command "rm -rf $TEMP_DIR"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando RustDesk para Arch Linux..."
+            
+            if command -v yay &> /dev/null; then
+                echo "Usando yay para instalar desde AUR..."
+                run_command "yay -S --noconfirm rustdesk-bin"
+            elif command -v paru &> /dev/null; then
+                echo "Usando paru para instalar desde AUR..."
+                run_command "paru -S --noconfirm rustdesk-bin"
+            else
+                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
+                echo "Descargando e instalando manualmente..."
+                
+                local TEMP_DIR="/tmp/rustdesk_install"
+                run_command "mkdir -p $TEMP_DIR"
+                
+                # Descargar AppImage
+                local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
+                
+                if command -v wget &> /dev/null; then
+                    run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+                elif command -v curl &> /dev/null; then
+                    run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+                fi
+                
+                # Instalar como AppImage
+                if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
+                    run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
+                    run_command "sudo chmod +x /opt/rustdesk.appimage"
+                    run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
+                fi
+                
+                run_command "rm -rf $TEMP_DIR"
+            fi
+            ;;
+            
+        opensuse|sles)
+            echo "Instalando RustDesk para openSUSE..."
+            
+            local TEMP_DIR="/tmp/rustdesk_install"
+            run_command "mkdir -p $TEMP_DIR"
+            
+            # Usar AppImage para openSUSE
+            local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
+            
+            echo "Descargando RustDesk AppImage..."
+            if command -v wget &> /dev/null; then
+                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+            elif command -v curl &> /dev/null; then
+                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+            fi
+            
+            # Instalar FUSE si es necesario
+            run_command "sudo zypper install -y fuse-libs"
+            
+            # Instalar AppImage
+            if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
+                run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
+                run_command "sudo chmod +x /opt/rustdesk.appimage"
+                run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
+            fi
+            
+            run_command "rm -rf $TEMP_DIR"
+            ;;
+            
+        alpine)
+            echo "Instalando RustDesk para Alpine Linux..."
+            echo "⚠️  Usando AppImage para Alpine Linux."
+            
+            # Instalar FUSE
+            run_command "sudo apk add --no-cache fuse2-libs"
+            
+            local TEMP_DIR="/tmp/rustdesk_install"
+            run_command "mkdir -p $TEMP_DIR"
+            
+            local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
+            
+            if command -v wget &> /dev/null; then
+                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+            elif command -v curl &> /dev/null; then
+                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
+            fi
+            
+            if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
+                run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
+                run_command "sudo chmod +x /opt/rustdesk.appimage"
+                run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
+            fi
+            
+            run_command "rm -rf $TEMP_DIR"
+            ;;
+            
+        *)
+            echo "Distribución $DISTRO no reconocida. Usando AppImage universal..."
+            install_rustdesk_appimage
+            ;;
+    esac
+    
+    # Crear entrada de escritorio si no existe
+    if [ ! -f /usr/share/applications/rustdesk.desktop ]; then
+        echo "Creando entrada de escritorio..."
+        sudo bash -c 'cat > /usr/share/applications/rustdesk.desktop << EOF
+[Desktop Entry]
+Name=RustDesk
+Exec=rustdesk
+Icon=rustdesk
+Type=Application
+Categories=Network;RemoteAccess;
+Comment=Remote Desktop Software
+EOF'
+        run_command "sudo chmod 644 /usr/share/applications/rustdesk.desktop"
+    fi
+    
+    # Verificar instalación
+    echo ""
+    echo "=== Verificando instalación ==="
+    if command -v rustdesk &> /dev/null; then
+        echo "✓ RustDesk instalado correctamente."
+        echo "Versión: $(rustdesk --version 2>/dev/null || echo 'Disponible')"
+        echo ""
+        echo "Para usar RustDesk:"
+        echo "  - Desde terminal: rustdesk"
+        echo "  - Desde el menú de aplicaciones: RustDesk"
+        echo ""
+        echo "Características de RustDesk:"
+        echo "  - Software de escritorio remoto seguro"
+        echo "  - Alternativa a TeamViewer y AnyDesk"
+        echo "  - Multiplataforma (Windows, macOS, Linux, iOS, Android)"
+        echo "  - Control remoto, transferencia de archivos"
+        echo "  - Comunicación P2P encriptada"
+        echo ""
+        echo "🔧 Estado del servicio RustDesk:"
+        if systemctl is-active --quiet rustdesk 2>/dev/null; then
+            echo "  ✓ Servicio RustDesk corriendo"
+        else
+            echo "  ⚠️  Servicio RustDesk no está corriendo"
+            echo "  Para iniciar: sudo systemctl start rustdesk"
+        fi
+        if systemctl is-enabled --quiet rustdesk 2>/dev/null; then
+            echo "  ✓ Servicio RustDesk habilitado para inicio automático"
+        else
+            echo "  ⚠️  Servicio RustDesk no habilitado para inicio automático"
+            echo "  Para habilitar: sudo systemctl enable rustdesk"
+        fi
+        echo "⚠️  Importante: Configure el acceso remoto en la aplicación antes del primer uso."
+    else
+        echo "❌ Error: RustDesk no se instaló correctamente."
+        echo ""
+        echo "Métodos alternativos:"
+        echo "1. Descargar manualmente desde: https://rustdesk.com/"
+        echo "2. Usar Flatpak: flatpak install flathub com.rustdesk.RustDesk"
+        return 1
+    fi
+}
+
+install_rustdesk_appimage() {
+    echo "Instalando RustDesk como AppImage..."
+    
+    local RUSTDESK_VERSION="1.4.0"
+    local BASE_URL="https://github.com/rustdesk/rustdesk/releases/download/$RUSTDESK_VERSION"
+    local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
+    
+    # Instalar FUSE si es necesario
+    echo "Verificando dependencias para AppImage..."
+    case $PACKAGE_MANAGER in
+        apt)
+            run_command "sudo apt install -y libfuse2"
+            ;;
+        dnf)
+            run_command "sudo dnf install -y fuse-libs"
+            ;;
+        pacman)
+            run_command "sudo pacman -S --noconfirm fuse2"
+            ;;
+        zypper)
+            run_command "sudo zypper install -y fuse-libs"
+            ;;
+        apk)
+            run_command "sudo apk add --no-cache fuse2-libs"
+            ;;
+    esac
+    
+    echo "Descargando RustDesk AppImage..."
+    if command -v wget &> /dev/null; then
+        run_command "sudo wget -q --show-progress -O /opt/rustdesk.appimage $BASE_URL/$RUSTDESK_APPIMAGE"
+    elif command -v curl &> /dev/null; then
+        run_command "sudo curl -L -o /opt/rustdesk.appimage $BASE_URL/$RUSTDESK_APPIMAGE"
+    else
+        echo "Error: Ni wget ni curl están instalados." >&2
+        return 1
+    fi
+    
+    # Hacer ejecutable y crear symlink
+    run_command "sudo chmod +x /opt/rustdesk.appimage"
+    run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
+    
+    echo "✓ RustDesk AppImage instalado en /opt/rustdesk.appimage"
+}
+install_chrome_dev() {
+    print_header "Instalando Google Chrome Dev"
+    
+    # Verificar si Chrome Dev ya está instalado
+    if command -v google-chrome-unstable &> /dev/null; then
+        echo "✓ Google Chrome Dev ya está instalado."
+        echo "Versión actual: $(google-chrome-unstable --version 2>/dev/null || echo 'No disponible')"
+        read -p "¿Deseas reinstalar o actualizar Chrome Dev? (y/N): " reinstall_chrome
+        if [[ ! "$reinstall_chrome" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Chrome Dev cancelada."
+            return 0
+        fi
+        echo "Procediendo con la instalación/actualización..."
+    fi
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            echo "Instalando Google Chrome Dev para Debian/Ubuntu..."
+            
+            # Instalar dependencias
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y wget gpg software-properties-common apt-transport-https"
+            
+            # Añadir clave GPG de Google
+            echo "Añadiendo clave GPG de Google..."
+            if [ ! -f /etc/apt/keyrings/google-chrome.gpg ]; then
+                run_command "wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg"
+            else
+                echo "✓ Clave GPG de Google ya existe."
+            fi
+            
+            # Añadir repositorio de Chrome
+            echo "Configurando repositorio de Google Chrome..."
+            if [ ! -f /etc/apt/sources.list.d/google-chrome.list ]; then
+                run_command "echo \"deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main\" | sudo tee /etc/apt/sources.list.d/google-chrome.list"
+            else
+                echo "✓ Repositorio de Google Chrome ya está configurado."
+            fi
+            
+            # Actualizar e instalar Chrome Dev
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y google-chrome-unstable"
+            ;;
+            
+        fedora)
+            echo "Instalando Google Chrome Dev para Fedora..."
+            
+            # Añadir repositorio de Google Chrome
+            if [ ! -f /etc/yum.repos.d/google-chrome.repo ]; then
+                sudo bash -c 'cat > /etc/yum.repos.d/google-chrome.repo << EOF
+[google-chrome]
+name=google-chrome
+baseurl=http://dl.google.com/linux/chrome/rpm/stable/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=https://dl.google.com/linux/linux_signing_key.pub
+EOF'
+                echo "✓ Repositorio de Google Chrome configurado."
+            else
+                echo "✓ Repositorio de Google Chrome ya existe."
+            fi
+            
+            # Instalar Chrome Dev
+            run_command "sudo dnf install -y google-chrome-unstable"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando Google Chrome Dev para Arch Linux..."
+            
+            if command -v yay &> /dev/null; then
+                echo "Usando yay para instalar desde AUR..."
+                run_command "yay -S --noconfirm google-chrome-dev"
+            elif command -v paru &> /dev/null; then
+                echo "Usando paru para instalar desde AUR..."
+                run_command "paru -S --noconfirm google-chrome-dev"
+            else
+                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
+                echo "Instalando desde snap como alternativa..."
+                if command -v snap &> /dev/null; then
+                    run_command "sudo snap install chromium --edge"
+                    echo "⚠️  Se instaló Chromium Edge en lugar de Chrome Dev (no disponible en snap)."
+                else
+                    echo "Error: Ni AUR helpers ni snap están disponibles." >&2
+                    echo "Por favor, instala Chrome Dev manualmente desde https://www.google.com/chrome/dev/"
+                    return 1
+                fi
+            fi
+            ;;
+            
+        opensuse|sles)
+            echo "Instalando Google Chrome Dev para openSUSE..."
+            
+            # Importar clave GPG
+            run_command "sudo rpm --import https://dl.google.com/linux/linux_signing_key.pub"
+            
+            # Añadir repositorio
+            if ! sudo zypper lr | grep -q "google-chrome"; then
+                run_command "sudo zypper addrepo http://dl.google.com/linux/chrome/rpm/stable/x86_64 google-chrome"
+                run_command "sudo zypper refresh"
+            else
+                echo "✓ Repositorio de Google Chrome ya existe."
+            fi
+            
+            # Instalar Chrome Dev
+            run_command "sudo zypper install -y google-chrome-unstable"
+            ;;
+            
+        alpine)
+            echo "Instalando Chromium (alternativa a Chrome) para Alpine..."
+            echo "⚠️  Google Chrome no está disponible oficialmente para Alpine Linux."
+            run_command "sudo apk add --no-cache chromium"
+            echo "✓ Chromium instalado como alternativa a Chrome Dev."
+            ;;
+            
+        *)
+            echo "Distribución $DISTRO no reconocida. Intentando descarga directa..."
+            
+            # Descarga directa del paquete DEB
+            echo "Descargando Google Chrome Dev directamente..."
+            local TEMP_DIR="/tmp/chrome_install"
+            run_command "mkdir -p $TEMP_DIR"
+            
+            if command -v wget &> /dev/null; then
+                run_command "wget -q --show-progress -O $TEMP_DIR/google-chrome-unstable.deb https://dl.google.com/linux/direct/google-chrome-unstable_current_amd64.deb"
+            elif command -v curl &> /dev/null; then
+                run_command "curl -L -o $TEMP_DIR/google-chrome-unstable.deb https://dl.google.com/linux/direct/google-chrome-unstable_current_amd64.deb"
+            else
+                echo "Error: Ni wget ni curl están instalados." >&2
+                return 1
+            fi
+            
+            # Intentar instalación directa
+            if [ -f "$TEMP_DIR/google-chrome-unstable.deb" ]; then
+                run_command "sudo dpkg -i $TEMP_DIR/google-chrome-unstable.deb"
+                run_command "sudo apt-get install -f -y" # Resolver dependencias
+            fi
+            
+            run_command "rm -rf $TEMP_DIR"
+            ;;
+    esac
+    
+    # Verificar instalación
+    echo ""
+    echo "=== Verificando instalación ==="
+    if command -v google-chrome-unstable &> /dev/null; then
+        echo "✓ Google Chrome Dev instalado correctamente."
+        echo "Versión: $(google-chrome-unstable --version 2>/dev/null || echo 'Disponible')"
+        echo ""
+        echo "Para abrir Chrome Dev:"
+        echo "  - Desde terminal: google-chrome-unstable"
+        echo "  - Desde el menú de aplicaciones: Google Chrome (Dev)"
+        echo ""
+        echo "Características de Chrome Dev:"
+        echo "  - Últimas funcionalidades experimentales"
+        echo "  - Herramientas de desarrollo más recientes"
+        echo "  - APIs web más nuevas"
+        echo "  - Ideal para desarrollo web"
+    elif command -v chromium &> /dev/null; then
+        echo "✓ Chromium instalado correctamente (alternativa a Chrome Dev)."
+        echo "Versión: $(chromium --version 2>/dev/null || echo 'Disponible')"
+    else
+        echo "❌ Error: Chrome Dev no se instaló correctamente."
+        echo ""
+        echo "Métodos alternativos:"
+        echo "1. Descargar manualmente desde: https://www.google.com/chrome/dev/"
+        echo "2. Usar Flatpak: flatpak install flathub com.google.Chrome"
+        return 1
+    fi
+}
 configure_firewall_ssh() {
     print_header "Configurando Firewall para SSH (Puerto 22)"
-    echo "Intentando configurar el firewall para permitir conexiones SSH (puerto 22)."
-
+    echo "Esta función instalará OpenSSH Server (si no está instalado) y configurará el firewall para SSH."
+    
+    # --- Instalar OpenSSH Server según la distribución ---
+    echo ""
+    echo "=== Paso 1: Verificando e instalando OpenSSH Server ==="
+    
+    local SSH_SERVICE_NAME=""
+    local SSH_PACKAGE_NAME=""
+    
+    # Determinar el nombre del servicio y paquete según la distribución
+    case $DISTRO in
+        ubuntu|debian|kali|parrot)
+            SSH_SERVICE_NAME="ssh"
+            SSH_PACKAGE_NAME="openssh-server"
+            ;;
+        fedora|centos|rhel)
+            SSH_SERVICE_NAME="sshd"
+            SSH_PACKAGE_NAME="openssh-server"
+            ;;
+        arch|manjaro)
+            SSH_SERVICE_NAME="sshd"
+            SSH_PACKAGE_NAME="openssh"
+            ;;
+        opensuse|sles)
+            SSH_SERVICE_NAME="sshd"
+            SSH_PACKAGE_NAME="openssh"
+            ;;
+        alpine)
+            SSH_SERVICE_NAME="sshd"
+            SSH_PACKAGE_NAME="openssh"
+            ;;
+        *)
+            echo "Distribución $DISTRO no reconocida. Usando valores por defecto (openssh-server/sshd)."
+            SSH_SERVICE_NAME="sshd"
+            SSH_PACKAGE_NAME="openssh-server"
+            ;;
+    esac
+    
+    # Verificar si OpenSSH Server ya está instalado
+    if systemctl list-unit-files | grep -q "^${SSH_SERVICE_NAME}.service"; then
+        echo "✓ OpenSSH Server ya está instalado."
+    else
+        echo "OpenSSH Server no detectado. Instalando $SSH_PACKAGE_NAME..."
+        case $PACKAGE_MANAGER in
+            apt)
+                run_command "sudo apt update -y"
+                run_command "sudo apt install -y $SSH_PACKAGE_NAME"
+                ;;
+            dnf)
+                run_command "sudo dnf install -y $SSH_PACKAGE_NAME"
+                ;;
+            pacman)
+                run_command "sudo pacman -S --noconfirm $SSH_PACKAGE_NAME"
+                ;;
+            zypper)
+                run_command "sudo zypper install -y $SSH_PACKAGE_NAME"
+                ;;
+            apk)
+                run_command "sudo apk add --no-cache $SSH_PACKAGE_NAME"
+                ;;
+            *)
+                echo "Error: Gestor de paquetes $PACKAGE_MANAGER no soportado para instalar OpenSSH Server." >&2
+                return 1
+                ;;
+        esac
+        echo "✓ OpenSSH Server instalado."
+    fi
+    
+    # Habilitar y arrancar el servicio SSH
+    echo "Habilitando y arrancando el servicio SSH..."
+    if systemctl is-enabled $SSH_SERVICE_NAME &> /dev/null; then
+        echo "✓ Servicio SSH ya está habilitado."
+    else
+        run_command "sudo systemctl enable $SSH_SERVICE_NAME"
+        echo "✓ Servicio SSH habilitado."
+    fi
+    
+    if systemctl is-active --quiet $SSH_SERVICE_NAME; then
+        echo "✓ Servicio SSH ya está corriendo."
+    else
+        run_command "sudo systemctl start $SSH_SERVICE_NAME"
+        echo "✓ Servicio SSH iniciado."
+    fi
+    
+    # Verificar estado del servicio
+    echo "Estado del servicio SSH:"
+    systemctl status $SSH_SERVICE_NAME --no-pager -l || echo "No se pudo obtener el estado del servicio SSH."
+    
+    # --- Configurar Firewall ---
+    echo ""
+    echo "=== Paso 2: Configurando Firewall para SSH ==="
+    
     if command -v ufw &> /dev/null; then
         echo "UFW detectado. Configurando UFW..."
         if sudo ufw status | grep -q "inactive"; then
             echo "UFW está inactivo. Habilitándolo y permitiendo OpenSSH."
             run_command "sudo ufw allow OpenSSH"
-            run_command "sudo ufw enable"
+            run_command "sudo ufw --force enable"
         else
             echo "UFW está activo. Asegurando que OpenSSH esté permitido."
             run_command "sudo ufw allow OpenSSH"
             run_command "sudo ufw reload"
         fi
-        echo "UFW configurado para SSH."
+        echo "✓ UFW configurado para SSH."
+        echo "Estado actual del UFW:"
+        sudo ufw status || echo "No se pudo obtener el estado de UFW."
+        
     elif command -v firewall-cmd &> /dev/null; then
         echo "FirewallD detectado. Configurando FirewallD..."
         if sudo systemctl is-active --quiet firewalld; then
@@ -875,15 +2422,35 @@ configure_firewall_ssh() {
             run_command "sudo firewall-cmd --permanent --add-service=ssh"
             run_command "sudo firewall-cmd --reload"
         fi
-        echo "FirewallD configurado para SSH."
+        echo "✓ FirewallD configurado para SSH."
+        echo "Estado actual de FirewallD:"
+        sudo firewall-cmd --list-services || echo "No se pudo obtener la lista de servicios de FirewallD."
+        
     else
-        echo "No se detectó UFW ni FirewallD. No se puede configurar el firewall automáticamente."
-        echo "Si utilizas otro firewall (ej. iptables), deberás configurarlo manualmente para permitir el puerto 22."
-        echo "  Ejemplo para iptables (permitir SSH):"
+        echo "⚠️  No se detectó UFW ni FirewallD."
+        echo "OpenSSH Server está instalado y corriendo, pero no se pudo configurar el firewall automáticamente."
+        echo ""
+        echo "Si utilizas otro firewall (ej. iptables), deberás configurarlo manualmente para permitir el puerto 22:"
+        echo "  Ejemplo para iptables:"
         echo "    sudo iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"
         echo "    sudo iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT"
-        echo "  (Recuerda guardar las reglas de iptables para que persistan tras el reinicio)."
+        echo "  Para hacer las reglas persistentes:"
+        echo "    sudo apt install iptables-persistent  # En Debian/Ubuntu"
+        echo "    sudo netfilter-persistent save        # Guardar reglas"
     fi
+    
+    # --- Información final ---
+    echo ""
+    echo "=== Configuración SSH Completada ==="
+    echo "✓ OpenSSH Server instalado y corriendo"
+    echo "✓ Puerto 22 configurado en el firewall (si está disponible)"
+    echo ""
+    echo "Información de conexión SSH:"
+    echo "  - Puerto: 22 (por defecto)"
+    echo "  - IP local: $(hostname -I | awk '{print $1}' 2>/dev/null || echo 'No disponible')"
+    echo "  - Comando de conexión desde otra máquina: ssh $(whoami)@$(hostname -I | awk '{print $1}' 2>/dev/null || echo 'TU_IP')"
+    echo ""
+    echo "Nota: Asegúrate de tener configurada la autenticación por clave SSH o contraseña antes de conectarte remotamente."
 }
 
 
@@ -904,12 +2471,16 @@ show_menu() {
     echo " 10) Instalar Bitwarden CLI"
     echo " 11) Instalar Tailscale"
     echo " 12) Instalar Brave Browser"
-    echo " 13) Instalar Cursor (AI Code Editor) AppImage"
+    echo " 13) Instalar Cursor (AI Code Editor) - Requiere AppImage local"
     echo " 14) Instalar Docker CLI (Engine, Compose, Buildx)"
     echo " 15) Instalar Docker Desktop"
     echo " 16) Instalar Fuentes (Cascadia Code, Caskaydia Cove Nerd Font)"
     echo " 17) Configurar Firewall para SSH (Puerto 22)"
-    echo " 18) Instalar TODAS las herramientas (usa NVM para Node.js)"
+    echo " 18) Instalar Visual Studio Code"
+    echo " 19) Instalar Warp Terminal - Requiere archivo .deb/rpm local"
+    echo " 20) Instalar Google Chrome Dev"
+    echo " 21) Instalar RustDesk"
+    echo " 22) Instalar TODAS las herramientas (usa NVM para Node.js)"
     echo "  0) Salir"
     echo -n "Tu elección: "
 }
@@ -940,7 +2511,11 @@ main() {
             15) install_docker_desktop ;;
             16) install_fonts ;;
             17) configure_firewall_ssh ;;
-            18)
+            18) install_vscode ;;
+            19) install_warp_terminal ;;
+            20) install_chrome_dev ;;
+            21) install_rustdesk ;;
+            22)
                 print_header "Instalando TODAS las herramientas"
                 echo "Nota: La opción 'Instalar Node.js y NPM Globalmente (sin NVM)' NO se incluye en 'Instalar TODAS las herramientas' para evitar 
 conflictos."
@@ -966,6 +2541,10 @@ conflictos."
                 install_tailscale || echo "Advertencia: Fallo en Tailscale. Continuando con otras instalaciones."
                 install_brave_browser || echo "Advertencia: Fallo en Brave Browser. Continuando con otras instalaciones."
                 install_cursor_appimage || echo "Advertencia: Fallo en Cursor AppImage. Asegúrate de que el AppImage esté en el directorio del script."
+                install_vscode || echo "Advertencia: Fallo en VS Code. Continuando con otras instalaciones."
+                install_warp_terminal || echo "Advertencia: Fallo en Warp Terminal. Continuando con otras instalaciones."
+                install_chrome_dev || echo "Advertencia: Fallo en Chrome Dev. Continuando con otras instalaciones."
+                install_rustdesk || echo "Advertencia: Fallo en RustDesk. Continuando con otras instalaciones."
                 install_docker_cli || echo "Advertencia: Fallo en Docker CLI. Continuando con otras instalaciones."
                 configure_firewall_ssh || echo "Advertencia: Fallo en la configuración del firewall. Continuando con otras instalaciones."
                 install_fonts || echo "Advertencia: Fallo en la instalación de fuentes. Continuando con otras instalaciones."
