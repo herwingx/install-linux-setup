@@ -1,0 +1,16 @@
+blur-my-shell@aunetx:enabled
+gsconnect@andyholmes.github.io:enabled
+clipboard-history@alexsaveau.dev:enabled
+quick-settings-avatar@d-go:enabled
+sp-tray@sp-tray.esenliyim.github.com:enabled
+Vitals@CoreCoding.com:enabled
+burn-my-windows@schneegans.github.com:enabled
+dash-to-dock@micxgx.gmail.com:enabled
+AlphabeticalAppGrid@stuarthayhurst:enabled
+extensions@abteil.org:enabled
+background-logo@fedorahosted.org:enabled
+user-theme@gnome-shell-extensions.gcampax.github.com:enabled
+apps-menu@gnome-shell-extensions.gcampax.github.com:disabled
+launch-new-instance@gnome-shell-extensions.gcampax.github.com:disabled
+places-menu@gnome-shell-extensions.gcampax.github.com:disabled
+window-list@gnome-shell-extensions.gcampax.github.com:disabled
