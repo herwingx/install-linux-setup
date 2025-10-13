@@ -30,8 +30,8 @@ detect_distro_and_package_manager() {
 
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        DISTRO_ID_LIKE="${ID_LIKE}" # e.g., "debian" for Ubuntu
-        DISTRO="${ID}" # e.g., "ubuntu", "fedora", "debian"
+        DISTRO_ID_LIKE="${ID_LIKE:-$ID}" # Use ID_LIKE or fallback to ID
+        DISTRO="${ID}" # e.g., "ubuntu", "fedora", "debian", "zorin"
         VERSION_ID="${VERSION_ID}" # e.g., "22.04", "11", "39"
         echo "Distribución detectada: $DISTRO (ID_LIKE: $DISTRO_ID_LIKE, Versión: $VERSION_ID)"
     else
@@ -42,7 +42,25 @@ detect_distro_and_package_manager() {
         VERSION_ID="unknown"
     fi
 
-    if command -v apt &> /dev/null; then
+    # Special case for Zorin OS
+    if [ -f /etc/os-release ] && grep -qi "zorin" /etc/os-release; then
+        DISTRO="zorin"
+        DISTRO_ID_LIKE="debian"
+        PACKAGE_MANAGER="apt"
+        INSTALL_COMMAND="sudo apt install -y"
+        UPDATE_COMMAND="sudo apt update -y"
+        REMOVE_COMMAND="sudo apt remove -y"
+        echo "Distribución detectada: Zorin OS"
+        echo "Gestor de paquetes: APT"
+    elif [ "$DISTRO" = "zorin" ] || [ "$DISTRO_ID_LIKE" = "zorin" ]; then
+        echo "Detectado Zorin OS por ID o ID_LIKE"
+        DISTRO="zorin"
+        DISTRO_ID_LIKE="debian"
+        PACKAGE_MANAGER="apt"
+        INSTALL_COMMAND="sudo apt install -y"
+        UPDATE_COMMAND="sudo apt update -y"
+        REMOVE_COMMAND="sudo apt remove -y"
+    elif command -v apt &> /dev/null; then
         PACKAGE_MANAGER="apt"
         INSTALL_COMMAND="sudo apt install -y"
         UPDATE_COMMAND="sudo apt update -y"
@@ -146,28 +164,27 @@ install_basic_utilities() {
     # Instalación de fastfetch
     echo "Instalando fastfetch..."
     case $DISTRO in
-        ubuntu)
-            # Para Ubuntu 22.04 o más reciente
-            if lsb_release -r -s | grep -qE "^2[2-9]\."; then
-                echo "Detectado Ubuntu 22.04+ o superior. Usando PPA para fastfetch."
+        ubuntu|zorin)
+            # Para Ubuntu 22.04+ o Zorin OS 16+ (basado en Ubuntu 22.04+)
+            if lsb_release -r -s | grep -qE "^2[2-9]\." || [ "$DISTRO" = "zorin" ]; then
+                echo "Detectado $DISTRO basado en Ubuntu 22.04+ o superior. Usando PPA para fastfetch."
                 run_command "sudo add-apt-repository ppa:zhangsongcui3371/fastfetch -y"
                 run_command "sudo apt update -y"
                 run_command "sudo apt install -y fastfetch"
             else
-                echo "Ubuntu versión anterior. Intentando instalar fastfetch desde el repositorio estándar."
+                echo "Versión anterior de $DISTRO. Intentando instalar fastfetch desde el repositorio estándar."
                 run_command "$INSTALL_COMMAND fastfetch"
             fi
             ;;
         debian)
             # Para Debian 13 o más reciente
-            # Usamos VERSION_ID que se obtiene de /etc/os-release
             if [ "$(echo "$VERSION_ID >= 13" | bc -l)" -eq 1 ]; then
                 echo "Detectado Debian 13+ o superior. Usando apt install fastfetch."
                 run_command "$INSTALL_COMMAND fastfetch"
             else
-                echo "Debian versión anterior. Intentando instalar fastfetch desde el repositorio estándar."
-                run_command "$INSTALL_COMMAND fastfetch"
-           fi
+                echo "Debian versión anterior. Instalando fastfetch desde el repositorio backports."
+                run_command "sudo apt install -t $(lsb_release -cs)-backports fastfetch -y"
+            fi
             ;;
         fedora)
             run_command "$INSTALL_COMMAND fastfetch"
@@ -179,11 +196,20 @@ install_basic_utilities() {
             run_command "$INSTALL_COMMAND fastfetch"
             ;;
         alpine)
-            run_command "$INSTALL_COMMAND fastfetch"
+            run_command "apk add fastfetch"
             ;;
         *)
-            echo "Instalación de fastfetch para $DISTRO no implementada con método específico. Intentando instalación genérica."
-            run_command "$INSTALL_COMMAND fastfetch"
+            echo "Distribución no soportada específicamente. Intentando instalación genérica de fastfetch..."
+            if command -v apt &> /dev/null; then
+                run_command "$INSTALL_COMMAND fastfetch"
+            elif command -v dnf &> /dev/null; then
+                run_command "$INSTALL_COMMAND fastfetch"
+            elif command -v pacman &> /dev/null; then
+                run_command "$INSTALL_COMMAND fastfetch"
+            else
+                echo "No se pudo determinar el gestor de paquetes. Por favor, instala fastfetch manualmente."
+                echo "Puedes encontrarlo en: https://github.com/fastfetch-cli/fastfetch"
+            fi
             ;;
     esac
 
@@ -2491,6 +2517,83 @@ configure_firewall_ssh() {
 }
 
 
+# Funciones para herramientas adicionales
+
+install_oh_my_posh() {
+    print_header "Instalando Oh My Posh"
+    
+    # Verificar si ya está instalado
+    if command -v oh-my-posh &> /dev/null; then
+        echo "Oh My Posh ya está instalado."
+        return 0
+    fi
+
+    # Instalar dependencias necesarias
+    echo "Instalando dependencias..."
+    run_command "$INSTALL_COMMAND wget unzip fonts-powerline"
+    
+    # Descargar e instalar Oh My Posh
+    echo "Descargando Oh My Posh..."
+    run_command "wget https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-amd64 -O /tmp/oh-my-posh"
+    run_command "chmod +x /tmp/oh-my-posh"
+    run_command "sudo mv /tmp/oh-my-posh /usr/local/bin/"
+    
+    # Crear directorio para temas si no existe
+    run_command "mkdir -p ~/.cache/oh-my-posh/themes"
+    
+    # Descargar tema powerline
+    echo "Descargando tema powerline..."
+    run_command "wget https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/powerline.omp.json -O ~/.cache/oh-my-posh/themes/powerline.omp.json"
+    
+    # Configurar .bashrc
+    local bashrc_path="$HOME/.bashrc"
+    local oh_my_posh_config="# Oh My Posh Configuration\nexport PATH=\$PATH:~/.local/bin\neval \"\$(oh-my-posh init bash --config ~/.cache/oh-my-posh/themes/powerline.omp.json)\""
+    
+    if ! grep -q "Oh My Posh Configuration" "$bashrc_path"; then
+        echo -e "\n$oh_my_posh_config" >> "$bashrc_path"
+        echo "Configuración de Oh My Posh añadida a $bashrc_path"
+    else
+        echo "La configuración de Oh My Posh ya existe en $bashrc_path"
+    fi
+    
+    echo "¡Oh My Posh instalado correctamente!"
+    echo "Por favor, reinicia tu terminal o ejecuta 'source ~/.bashrc' para ver los cambios."
+}
+
+install_copilot_cli() {
+    print_header "Instalando GitHub Copilot CLI"
+    
+    # Verificar si ya está instalado
+    if command -v github-copilot-cli &> /dev/null; then
+        echo "GitHub Copilot CLI ya está instalado."
+        return 0
+    fi
+    
+    # Verificar si Node.js está instalado
+    if ! command -v node &> /dev/null; then
+        echo "Node.js no está instalado. Instalando Node.js..."
+        install_nvm_node_npm
+        if ! command -v node &> /dev/null; then
+            echo "Error: No se pudo instalar Node.js. Por favor, instálalo manualmente."
+            return 1
+        fi
+    fi
+    
+    # Instalar GitHub Copilot CLI
+    echo "Instalando GitHub Copilot CLI..."
+    run_command "npm install -g @githubnext/github-copilot-cli"
+    
+    # Configuración inicial
+    echo "Configurando GitHub Copilot CLI..."
+    echo "Por favor, sigue las instrucciones para autenticarte con GitHub."
+    run_command "github-copilot-cli auth"
+    
+    echo "¡GitHub Copilot CLI instalado correctamente!"
+    echo "Puedes usarlo con los comandos:"
+    echo "  - github-copilot-cli what-the-shell [comando] - Explicar un comando"
+    echo "  - github-copilot-cli suggest - Generar sugerencias de comandos"
+}
+
 # --- Menú Principal ---
 
 show_menu() {
@@ -2517,7 +2620,9 @@ show_menu() {
     echo " 19) Instalar Warp Terminal - Requiere archivo .deb/rpm local"
     echo " 20) Instalar Google Chrome Dev"
     echo " 21) Instalar RustDesk"
-    echo " 22) Instalar TODAS las herramientas (usa NVM para Node.js)"
+    echo " 22) Instalar Oh My Posh (Terminal personalizada)"
+    echo " 23) Instalar GitHub Copilot CLI"
+    echo " 24) Instalar TODAS las herramientas (usa NVM para Node.js)"
     echo "  0) Salir"
     echo -n "Tu elección: "
 }
@@ -2547,19 +2652,15 @@ main() {
             14) install_docker_cli ;;
             15) install_docker_desktop_with_dependencies ;;
             16) install_fonts ;;
-            17) configure_firewall_ssh ;;
-            18) install_vscode ;;
-            19) install_warp_terminal ;;
+            17) install_vscode ;;
+            18) install_warp_terminal ;;
+            19) install_rustdesk ;;
             20) install_chrome_dev ;;
-            21) install_rustdesk ;;
-            22)
-                print_header "Instalando TODAS las herramientas"
-                echo "Nota: La opción 'Instalar Node.js y NPM Globalmente (sin NVM)' NO se incluye en 'Instalar TODAS las herramientas' para evitar 
-conflictos."
-                echo "Se te preguntará qué tipo de Docker instalar (CLI o Desktop) durante la instalación 'Todo'. automática."
-                sleep 2
-                
-                # Priorizar actualizaciones y utilidades base
+            21) configure_firewall_ssh ;;
+            22) install_oh_my_posh ;;
+            23) install_copilot_cli ;;
+            24)
+                echo "Instalando todas las herramientas..."
                 update_system || { echo "Advertencia: Fallo al actualizar el sistema. Continuando con otras instalaciones."; }
                 install_basic_utilities || { echo "Fallo en utilidades básicas. Abortando 'Instalar Todo'."; exit 1; }
                 
@@ -2585,20 +2686,20 @@ conflictos."
                 choose_docker_installation || echo "Advertencia: Fallo en la instalación de Docker. Continuando con otras instalaciones."
                 configure_firewall_ssh || echo "Advertencia: Fallo en la configuración del firewall. Continuando con otras instalaciones."
                 install_fonts || echo "Advertencia: Fallo en la instalación de fuentes. Continuando con otras instalaciones."
-
+                install_oh_my_posh || echo "Advertencia: Fallo al instalar Oh My Posh. Continuando con otras instalaciones."
+                install_copilot_cli || echo "Advertencia: Fallo al instalar GitHub Copilot CLI. Continuando con otras instalaciones."
+                
                 echo -e "\n=============================================="
                 echo -e "  ¡Instalación de TODAS las herramientas completada!"
                 echo -e "  Por favor, revisa los mensajes anteriores para cualquier advertencia o paso manual."
                 echo -e "  Recuerda reiniciar tu sesión o sistema para que todos los cambios surtan efecto (especialmente Docker, NVM y alias)."
-                echo -e "==============================================\n"
-                break
                 ;;
-            0)
-                echo "Saliendo del script. ¡Adiós!"
-                exit 0
+            0) 
+                echo "Saliendo..."
+                exit 0 
                 ;;
             *)
-                echo "Opción inválida. Por favor, intenta de nuevo."
+                echo "Opción no válida. Intenta de nuevo."
                 ;;
         esac
         echo -e "\nPresiona Enter para continuar..."
