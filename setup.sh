@@ -9,7 +9,81 @@ UPDATE_COMMAND="" # Solo para índices, upgrade se manejará en update_system
 REMOVE_COMMAND="" # No usado directamente en este script, pero útil para la lógica
 USER_HOME="$HOME" # Asegura que HOME esté definido
 
+# Verificar requisitos al inicio
+check_system_requirements
+
+# Asegurar limpieza al salir
+trap cleanup_temp_files EXIT
+
 # --- Funciones de Ayuda ---
+
+check_system_requirements() {
+    print_header "Verificando requisitos del sistema"
+    
+    # Verificar arquitectura
+    local ARCH=$(uname -m)
+    echo "Arquitectura detectada: $ARCH"
+    if [ "$ARCH" != "x86_64" ] && [ "$ARCH" != "amd64" ]; then
+        echo "⚠️  Advertencia: Este script está optimizado para arquitecturas x86_64/amd64."
+        echo "    Algunas funciones podrían no estar disponibles en $ARCH."
+        read -p "¿Deseas continuar? (y/N): " continue_arch
+        if [[ ! "$continue_arch" =~ ^[Yy]$ ]]; then
+            echo "Instalación cancelada por el usuario."
+            exit 1
+        fi
+    fi
+
+    # Verificar espacio en disco
+    local SPACE_AVAILABLE=$(df -k / | tail -1 | awk '{print $4}')
+    local SPACE_GB=$((SPACE_AVAILABLE / 1024 / 1024))
+    echo "Espacio disponible: ${SPACE_GB}GB"
+    if [ $SPACE_GB -lt 10 ]; then
+        echo "⚠️  Advertencia: Se recomienda tener al menos 10GB de espacio libre."
+        echo "    Espacio actual: ${SPACE_GB}GB"
+        read -p "¿Deseas continuar? (y/N): " continue_space
+        if [[ ! "$continue_space" =~ ^[Yy]$ ]]; then
+            echo "Instalación cancelada por el usuario."
+            exit 1
+        fi
+    fi
+
+    # Verificar memoria RAM
+    local TOTAL_RAM=$(free -g | awk '/^Mem:/{print $2}')
+    echo "Memoria RAM total: ${TOTAL_RAM}GB"
+    if [ $TOTAL_RAM -lt 4 ]; then
+        echo "⚠️  Advertencia: Se recomienda tener al menos 4GB de RAM."
+        echo "    RAM actual: ${TOTAL_RAM}GB"
+        read -p "¿Deseas continuar? (y/N): " continue_ram
+        if [[ ! "$continue_ram" =~ ^[Yy]$ ]]; then
+            echo "Instalación cancelada por el usuario."
+            exit 1
+        fi
+    fi
+
+    echo "✓ Verificación de requisitos completada."
+}
+
+cleanup_temp_files() {
+    print_header "Limpiando archivos temporales"
+    
+    # Limpiar archivos temporales
+    local temp_files=(
+        "/tmp/CascadiaCode.zip"
+        "/tmp/CascadiaCodeNerd.zip"
+        "/tmp/CascadiaCode_extracted"
+        "/tmp/CascadiaCodeNerd_extracted"
+        "/tmp/packages.microsoft.gpg"
+    )
+
+    for file in "${temp_files[@]}"; do
+        if [ -e "$file" ]; then
+            echo "Eliminando $file..."
+            rm -rf "$file"
+        fi
+    done
+
+    echo "✓ Limpieza completada."
+}
 
 print_header() {
     echo -e "\n=============================================="
@@ -148,8 +222,10 @@ update_system() {
 install_basic_utilities() {
     print_header "Instalando Utilidades Básicas de Linux y Git"
 
-    local common_utils=("tree" "unzip" "net-tools" "curl" "wget" "htop" "btop" "grep" "awk" "cut" "paste" "sort" "tr" "head" "tail" "join" "split" "tee" 
-"nl" "wc" "expand" "unexpand" "uniq")
+    local common_utils=(
+        "tree" "unzip" "net-tools" "curl" "wget" "htop" "btop" "grep" "awk" "cut" "paste" "sort" "tr"
+        "head" "tail" "join" "split" "tee" "nl" "wc" "expand" "unexpand" "uniq"
+    )
 
     echo "Instalando utilidades comunes..."
     for util in "${common_utils[@]}"; do
@@ -161,11 +237,61 @@ install_basic_utilities() {
         fi
     done
 
+    # --- TLDR ---
+    if ! command -v tldr &> /dev/null; then
+        echo "tldr no encontrado, intentando instalar..."
+        case $PACKAGE_MANAGER in
+            apt|dnf|zypper|pacman|yum|apk)
+                run_command "$INSTALL_COMMAND tldr" || true
+                ;;
+        esac
+        if ! command -v tldr &> /dev/null; then
+            echo "tldr no disponible en repositorio, intentando instalar con pipx..."
+            if ! command -v pipx &> /dev/null; then
+                run_command "$INSTALL_COMMAND pipx" || run_command "$INSTALL_COMMAND python3-pip"
+                python3 -m pip install --user pipx
+                python3 -m pipx ensurepath
+                export PATH="$HOME/.local/bin:$PATH"
+            fi
+            pipx install tldr || python3 -m pip install --user tldr
+        fi
+    fi
+    if command -v tldr &> /dev/null; then
+        echo "Actualizando caché de tldr..."
+        tldr --update || true
+    fi
+
+    # --- SCRCPY ---
+    if ! command -v scrcpy &> /dev/null; then
+        echo "scrcpy no encontrado, intentando instalar..."
+        case $PACKAGE_MANAGER in
+            apt|dnf|zypper|pacman|yum|apk)
+                run_command "$INSTALL_COMMAND scrcpy" || true
+                ;;
+        esac
+        if ! command -v scrcpy &> /dev/null; then
+            echo "scrcpy no disponible en repositorio. Instalando versión portable 64 bits..."
+            LATEST_URL=$(curl -s https://api.github.com/repos/Genymobile/scrcpy/releases/latest | grep "browser_download_url.*linux64" | cut -d '"' -f 4 | head -n1)
+            if [ -n "$LATEST_URL" ]; then
+                TMP_DIR=$(mktemp -d)
+                cd "$TMP_DIR"
+                curl -LO "$LATEST_URL"
+                tar xzf scrcpy-*-linux64.tar.gz
+                sudo cp scrcpy-*-linux64/scrcpy /usr/local/bin/
+                sudo chmod +x /usr/local/bin/scrcpy
+                cd -
+                rm -rf "$TMP_DIR"
+                echo "scrcpy instalado en /usr/local/bin"
+            else
+                echo "No se pudo descargar scrcpy. Instálalo manualmente desde https://github.com/Genymobile/scrcpy"
+            fi
+        fi
+    fi
+
     # Instalación de fastfetch
     echo "Instalando fastfetch..."
     case $DISTRO in
         ubuntu|zorin)
-            # Para Ubuntu 22.04+ o Zorin OS 16+ (basado en Ubuntu 22.04+)
             if lsb_release -r -s | grep -qE "^2[2-9]\." || [ "$DISTRO" = "zorin" ]; then
                 echo "Detectado $DISTRO basado en Ubuntu 22.04+ o superior. Usando PPA para fastfetch."
                 run_command "sudo add-apt-repository ppa:zhangsongcui3371/fastfetch -y"
@@ -177,7 +303,6 @@ install_basic_utilities() {
             fi
             ;;
         debian)
-            # Para Debian 13 o más reciente
             if [ "$(echo "$VERSION_ID >= 13" | bc -l)" -eq 1 ]; then
                 echo "Detectado Debian 13+ o superior. Usando apt install fastfetch."
                 run_command "$INSTALL_COMMAND fastfetch"
@@ -319,15 +444,22 @@ add_bash_aliases() {
     print_header "Añadiendo Alias a .bashrc"
     local BASHRC_PATH="$USER_HOME/.bashrc"
     local aliases=(
-        "# some more ls aliases"
-        "alias ll='ls -alF'"
-        "alias la='ls -A'"
-        "alias l='ls -CF'"
-        "# alias code='code-insiders'"
+        "# System utilities"
         "alias size='du -h --max-depth=1 ~/'"
         "alias storage='df -h'"
-        "alias up='sudo apt update && sudo apt upgrade'"
+        "alias up='sudo apt update && sudo apt upgrade -y'"
         "alias list-size='du -h --max-depth=1 | sort -hr'"
+        "alias waydroid='waydroid show-full-ui'"
+        "alias off='sudo shutdown now'"
+        "alias rb='sudo reboot now'"
+        "alias tldr='tldr --color=always'"
+        "
+        # Git aliases"
+        "alias gs='git status'"
+        "alias ga='git add'"
+        "alias gc='git commit -m'"
+        "alias gp='git push'"
+        "alias gl='git pull'"
     )
 
     echo "Añadiendo alias a $BASHRC_PATH..."
@@ -445,7 +577,6 @@ install_nodejs_global_without_nvm() {
             # Añadir repositorio NodeSource
             echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee /etc/apt/sources.list.d/nodesource.list >/dev/null
             echo "deb-src [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x ${DISTRO_CODENAME} main" | sudo tee -a /etc/apt/sources.list.d/nodesource.list >/dev/null
-/etc/apt/sources.list.d/nodesource.list >/dev/null
             
             run_command "sudo apt-get update -y"
             run_command "sudo apt-get install -y nodejs" # Esto instala nodejs y npm
@@ -1062,6 +1193,22 @@ install_fonts() {
 
 install_vscode() {
     print_header "Instalando Visual Studio Code"
+
+    # Verificar arquitectura soportada
+    local ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$ARCH" in
+        amd64|x86_64)
+            echo "✓ Arquitectura $ARCH soportada"
+            ;;
+        arm64|aarch64)
+            echo "✓ Arquitectura $ARCH soportada"
+            ;;
+        *)
+            echo "❌ Error: Arquitectura $ARCH no soportada oficialmente por VS Code."
+            echo "    VS Code está disponible principalmente para amd64 y arm64."
+            return 1
+            ;;
+    esac
     
     # Verificar si VS Code ya está instalado
     if command -v code &> /dev/null; then
@@ -1873,328 +2020,7 @@ EOF"
     echo "✓ Warp Terminal AppImage instalado en $WARP_APPIMAGE"
     echo "✓ Comando disponible: warp-terminal"
 }
-install_rustdesk() {
-    print_header "Instalando RustDesk"
-    
-    # Verificar si RustDesk ya está instalado
-    if command -v rustdesk &> /dev/null; then
-        echo "✓ RustDesk ya está instalado."
-        echo "Versión actual: $(rustdesk --version 2>/dev/null || echo 'No disponible')"
-        read -p "¿Deseas reinstalar o actualizar RustDesk? (y/N): " reinstall_rustdesk
-        if [[ ! "$reinstall_rustdesk" =~ ^[Yy]$ ]]; then
-            echo "Instalación de RustDesk cancelada."
-            return 0
-        fi
-        echo "Procediendo con la instalación/actualización..."
-    fi
-    
-    # Versión actual de RustDesk
-    local RUSTDESK_VERSION="1.4.0"
-    local BASE_URL="https://github.com/rustdesk/rustdesk/releases/download/$RUSTDESK_VERSION"
-    
-    case $DISTRO in
-        ubuntu|debian|kali|parrot)
-            echo "Instalando RustDesk para Debian/Ubuntu..."
-            
-            # Crear directorio temporal
-            local TEMP_DIR="/tmp/rustdesk_install"
-            run_command "mkdir -p $TEMP_DIR"
-            
-            # Detectar arquitectura
-            local ARCH=$(dpkg --print-architecture)
-            local RUSTDESK_DEB=""
-            
-            case $ARCH in
-                amd64)
-                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-x86_64.deb"
-                    ;;
-                arm64)
-                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-aarch64.deb"
-                    ;;
-                armhf)
-                    RUSTDESK_DEB="rustdesk-${RUSTDESK_VERSION}-armv7.deb"
-                    ;;
-                *)
-                    echo "Arquitectura $ARCH no soportada para RustDesk."
-                    return 1
-                    ;;
-            esac
-            
-            # Descargar RustDesk
-            echo "Descargando RustDesk $RUSTDESK_VERSION para $ARCH..."
-            if command -v wget &> /dev/null; then
-                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_DEB $BASE_URL/$RUSTDESK_DEB"
-            elif command -v curl &> /dev/null; then
-                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_DEB $BASE_URL/$RUSTDESK_DEB"
-            else
-                echo "Error: Ni wget ni curl están instalados." >&2
-                return 1
-            fi
-            
-            # Verificar descarga
-            if [ -f "$TEMP_DIR/$RUSTDESK_DEB" ] && [ -s "$TEMP_DIR/$RUSTDESK_DEB" ]; then
-                echo "✓ Archivo descargado correctamente."
-                
-                
-                # Instalar dependencias conocidas de RustDesk
-                echo "Instalando dependencias necesarias para RustDesk..."
-                run_command "sudo apt update -y"
-                run_command "sudo apt install -y libxdo3 libgtk-3-0 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0"
-                
-                # Instalar RustDesk
-                echo "Instalando RustDesk..."
-                run_command "sudo dpkg -i $TEMP_DIR/$RUSTDESK_DEB"
-                
-                # Resolver dependencias
-                echo "Resolviendo dependencias..."
-                run_command "sudo apt-get install -f -y"
-            else
-                echo "❌ Error al descargar RustDesk."
-                return 1
-            fi
-            
-            # Limpiar
-            run_command "rm -rf $TEMP_DIR"
-            ;;
-            
-        fedora|centos|rhel)
-            echo "Instalando RustDesk para Fedora/RHEL..."
-            
-            local TEMP_DIR="/tmp/rustdesk_install"
-            run_command "mkdir -p $TEMP_DIR"
-            
-            # RustDesk RPM para x86_64
-            local RUSTDESK_RPM="rustdesk-${RUSTDESK_VERSION}-0.x86_64.rpm"
-            
-            echo "Descargando RustDesk $RUSTDESK_VERSION..."
-            if command -v wget &> /dev/null; then
-                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_RPM $BASE_URL/$RUSTDESK_RPM"
-            elif command -v curl &> /dev/null; then
-                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_RPM $BASE_URL/$RUSTDESK_RPM"
-            else
-                echo "Error: Ni wget ni curl están instalados." >&2
-                return 1
-            fi
-            
-            # Instalar RustDesk
-            if [ -f "$TEMP_DIR/$RUSTDESK_RPM" ] && [ -s "$TEMP_DIR/$RUSTDESK_RPM" ]; then
-                
-                # Instalar dependencias conocidas de RustDesk para Fedora
-                echo "Instalando dependencias necesarias para RustDesk..."
-                run_command "sudo dnf install -y libxdo gtk3 gstreamer1 gstreamer1-plugins-base"
-                
-                echo "Instalando RustDesk..."
-                if command -v dnf &> /dev/null; then
-                    run_command "sudo dnf install -y $TEMP_DIR/$RUSTDESK_RPM"
-                else
-                    run_command "sudo rpm -i $TEMP_DIR/$RUSTDESK_RPM"
-                fi
-            else
-                echo "❌ Error al descargar RustDesk."
-                return 1
-            fi
-            
-            run_command "rm -rf $TEMP_DIR"
-            ;;
-            
-        arch|manjaro)
-            echo "Instalando RustDesk para Arch Linux..."
-            
-            if command -v yay &> /dev/null; then
-                echo "Usando yay para instalar desde AUR..."
-                run_command "yay -S --noconfirm rustdesk-bin"
-            elif command -v paru &> /dev/null; then
-                echo "Usando paru para instalar desde AUR..."
-                run_command "paru -S --noconfirm rustdesk-bin"
-            else
-                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
-                echo "Descargando e instalando manualmente..."
-                
-                local TEMP_DIR="/tmp/rustdesk_install"
-                run_command "mkdir -p $TEMP_DIR"
-                
-                # Descargar AppImage
-                local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
-                
-                if command -v wget &> /dev/null; then
-                    run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-                elif command -v curl &> /dev/null; then
-                    run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-                fi
-                
-                # Instalar como AppImage
-                if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
-                    run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
-                    run_command "sudo chmod +x /opt/rustdesk.appimage"
-                    run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
-                fi
-                
-                run_command "rm -rf $TEMP_DIR"
-            fi
-            ;;
-            
-        opensuse|sles)
-            echo "Instalando RustDesk para openSUSE..."
-            
-            local TEMP_DIR="/tmp/rustdesk_install"
-            run_command "mkdir -p $TEMP_DIR"
-            
-            # Usar AppImage para openSUSE
-            local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
-            
-            echo "Descargando RustDesk AppImage..."
-            if command -v wget &> /dev/null; then
-                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-            elif command -v curl &> /dev/null; then
-                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-            fi
-            
-            # Instalar FUSE si es necesario
-            run_command "sudo zypper install -y fuse-libs"
-            
-            # Instalar AppImage
-            if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
-                run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
-                run_command "sudo chmod +x /opt/rustdesk.appimage"
-                run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
-            fi
-            
-            run_command "rm -rf $TEMP_DIR"
-            ;;
-            
-        alpine)
-            echo "Instalando RustDesk para Alpine Linux..."
-            echo "⚠️  Usando AppImage para Alpine Linux."
-            
-            # Instalar FUSE
-            run_command "sudo apk add --no-cache fuse2-libs"
-            
-            local TEMP_DIR="/tmp/rustdesk_install"
-            run_command "mkdir -p $TEMP_DIR"
-            
-            local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
-            
-            if command -v wget &> /dev/null; then
-                run_command "wget -q --show-progress -O $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-            elif command -v curl &> /dev/null; then
-                run_command "curl -L -o $TEMP_DIR/$RUSTDESK_APPIMAGE $BASE_URL/$RUSTDESK_APPIMAGE"
-            fi
-            
-            if [ -f "$TEMP_DIR/$RUSTDESK_APPIMAGE" ]; then
-                run_command "sudo mv $TEMP_DIR/$RUSTDESK_APPIMAGE /opt/rustdesk.appimage"
-                run_command "sudo chmod +x /opt/rustdesk.appimage"
-                run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
-            fi
-            
-            run_command "rm -rf $TEMP_DIR"
-            ;;
-            
-        *)
-            echo "Distribución $DISTRO no reconocida. Usando AppImage universal..."
-            install_rustdesk_appimage
-            ;;
-    esac
-    
-    # Crear entrada de escritorio si no existe
-    if [ ! -f /usr/share/applications/rustdesk.desktop ]; then
-        echo "Creando entrada de escritorio..."
-        sudo bash -c 'cat > /usr/share/applications/rustdesk.desktop << EOF
-[Desktop Entry]
-Name=RustDesk
-Exec=rustdesk
-Icon=rustdesk
-Type=Application
-Categories=Network;RemoteAccess;
-Comment=Remote Desktop Software
-EOF'
-        run_command "sudo chmod 644 /usr/share/applications/rustdesk.desktop"
-    fi
-    
-    # Verificar instalación
-    echo ""
-    echo "=== Verificando instalación ==="
-    if command -v rustdesk &> /dev/null; then
-        echo "✓ RustDesk instalado correctamente."
-        echo "Versión: $(rustdesk --version 2>/dev/null || echo 'Disponible')"
-        echo ""
-        echo "Para usar RustDesk:"
-        echo "  - Desde terminal: rustdesk"
-        echo "  - Desde el menú de aplicaciones: RustDesk"
-        echo ""
-        echo "Características de RustDesk:"
-        echo "  - Software de escritorio remoto seguro"
-        echo "  - Alternativa a TeamViewer y AnyDesk"
-        echo "  - Multiplataforma (Windows, macOS, Linux, iOS, Android)"
-        echo "  - Control remoto, transferencia de archivos"
-        echo "  - Comunicación P2P encriptada"
-        echo ""
-        echo "🔧 Estado del servicio RustDesk:"
-        if systemctl is-active --quiet rustdesk 2>/dev/null; then
-            echo "  ✓ Servicio RustDesk corriendo"
-        else
-            echo "  ⚠️  Servicio RustDesk no está corriendo"
-            echo "  Para iniciar: sudo systemctl start rustdesk"
-        fi
-        if systemctl is-enabled --quiet rustdesk 2>/dev/null; then
-            echo "  ✓ Servicio RustDesk habilitado para inicio automático"
-        else
-            echo "  ⚠️  Servicio RustDesk no habilitado para inicio automático"
-            echo "  Para habilitar: sudo systemctl enable rustdesk"
-        fi
-        echo "⚠️  Importante: Configure el acceso remoto en la aplicación antes del primer uso."
-    else
-        echo "❌ Error: RustDesk no se instaló correctamente."
-        echo ""
-        echo "Métodos alternativos:"
-        echo "1. Descargar manualmente desde: https://rustdesk.com/"
-        echo "2. Usar Flatpak: flatpak install flathub com.rustdesk.RustDesk"
-        return 1
-    fi
-}
 
-install_rustdesk_appimage() {
-    echo "Instalando RustDesk como AppImage..."
-    
-    local RUSTDESK_VERSION="1.4.0"
-    local BASE_URL="https://github.com/rustdesk/rustdesk/releases/download/$RUSTDESK_VERSION"
-    local RUSTDESK_APPIMAGE="rustdesk-${RUSTDESK_VERSION}-x86_64.AppImage"
-    
-    # Instalar FUSE si es necesario
-    echo "Verificando dependencias para AppImage..."
-    case $PACKAGE_MANAGER in
-        apt)
-            run_command "sudo apt install -y libfuse2"
-            ;;
-        dnf)
-            run_command "sudo dnf install -y fuse-libs"
-            ;;
-        pacman)
-            run_command "sudo pacman -S --noconfirm fuse2"
-            ;;
-        zypper)
-            run_command "sudo zypper install -y fuse-libs"
-            ;;
-        apk)
-            run_command "sudo apk add --no-cache fuse2-libs"
-            ;;
-    esac
-    
-    echo "Descargando RustDesk AppImage..."
-    if command -v wget &> /dev/null; then
-        run_command "sudo wget -q --show-progress -O /opt/rustdesk.appimage $BASE_URL/$RUSTDESK_APPIMAGE"
-    elif command -v curl &> /dev/null; then
-        run_command "sudo curl -L -o /opt/rustdesk.appimage $BASE_URL/$RUSTDESK_APPIMAGE"
-    else
-        echo "Error: Ni wget ni curl están instalados." >&2
-        return 1
-    fi
-    
-    # Hacer ejecutable y crear symlink
-    run_command "sudo chmod +x /opt/rustdesk.appimage"
-    run_command "sudo ln -sf /opt/rustdesk.appimage /usr/local/bin/rustdesk"
-    
-    echo "✓ RustDesk AppImage instalado en /opt/rustdesk.appimage"
-}
 install_chrome_dev() {
     print_header "Instalando Google Chrome Dev"
     
@@ -2364,159 +2190,6 @@ EOF'
         return 1
     fi
 }
-configure_firewall_ssh() {
-    print_header "Configurando Firewall para SSH (Puerto 22)"
-    echo "Esta función instalará OpenSSH Server (si no está instalado) y configurará el firewall para SSH."
-    
-    # --- Instalar OpenSSH Server según la distribución ---
-    echo ""
-    echo "=== Paso 1: Verificando e instalando OpenSSH Server ==="
-    
-    local SSH_SERVICE_NAME=""
-    local SSH_PACKAGE_NAME=""
-    
-    # Determinar el nombre del servicio y paquete según la distribución
-    case $DISTRO in
-        ubuntu|debian|kali|parrot)
-            SSH_SERVICE_NAME="ssh"
-            SSH_PACKAGE_NAME="openssh-server"
-            ;;
-        fedora|centos|rhel)
-            SSH_SERVICE_NAME="sshd"
-            SSH_PACKAGE_NAME="openssh-server"
-            ;;
-        arch|manjaro)
-            SSH_SERVICE_NAME="sshd"
-            SSH_PACKAGE_NAME="openssh"
-            ;;
-        opensuse|sles)
-            SSH_SERVICE_NAME="sshd"
-            SSH_PACKAGE_NAME="openssh"
-            ;;
-        alpine)
-            SSH_SERVICE_NAME="sshd"
-            SSH_PACKAGE_NAME="openssh"
-            ;;
-        *)
-            echo "Distribución $DISTRO no reconocida. Usando valores por defecto (openssh-server/sshd)."
-            SSH_SERVICE_NAME="sshd"
-            SSH_PACKAGE_NAME="openssh-server"
-            ;;
-    esac
-    
-    # Verificar si OpenSSH Server ya está instalado
-    if systemctl list-unit-files | grep -q "^${SSH_SERVICE_NAME}.service"; then
-        echo "✓ OpenSSH Server ya está instalado."
-    else
-        echo "OpenSSH Server no detectado. Instalando $SSH_PACKAGE_NAME..."
-        case $PACKAGE_MANAGER in
-            apt)
-                run_command "sudo apt update -y"
-                run_command "sudo apt install -y $SSH_PACKAGE_NAME"
-                ;;
-            dnf)
-                run_command "sudo dnf install -y $SSH_PACKAGE_NAME"
-                ;;
-            pacman)
-                run_command "sudo pacman -S --noconfirm $SSH_PACKAGE_NAME"
-                ;;
-            zypper)
-                run_command "sudo zypper install -y $SSH_PACKAGE_NAME"
-                ;;
-            apk)
-                run_command "sudo apk add --no-cache $SSH_PACKAGE_NAME"
-                ;;
-            *)
-                echo "Error: Gestor de paquetes $PACKAGE_MANAGER no soportado para instalar OpenSSH Server." >&2
-                return 1
-                ;;
-        esac
-        echo "✓ OpenSSH Server instalado."
-    fi
-    
-    # Habilitar y arrancar el servicio SSH
-    echo "Habilitando y arrancando el servicio SSH..."
-    if systemctl is-enabled $SSH_SERVICE_NAME &> /dev/null; then
-        echo "✓ Servicio SSH ya está habilitado."
-    else
-        run_command "sudo systemctl enable $SSH_SERVICE_NAME"
-        echo "✓ Servicio SSH habilitado."
-    fi
-    
-    if systemctl is-active --quiet $SSH_SERVICE_NAME; then
-        echo "✓ Servicio SSH ya está corriendo."
-    else
-        run_command "sudo systemctl start $SSH_SERVICE_NAME"
-        echo "✓ Servicio SSH iniciado."
-    fi
-    
-    # Verificar estado del servicio
-    echo "Estado del servicio SSH:"
-    systemctl status $SSH_SERVICE_NAME --no-pager -l || echo "No se pudo obtener el estado del servicio SSH."
-    
-    # --- Configurar Firewall ---
-    echo ""
-    echo "=== Paso 2: Configurando Firewall para SSH ==="
-    
-    if command -v ufw &> /dev/null; then
-        echo "UFW detectado. Configurando UFW..."
-        if sudo ufw status | grep -q "inactive"; then
-            echo "UFW está inactivo. Habilitándolo y permitiendo OpenSSH."
-            run_command "sudo ufw allow OpenSSH"
-            run_command "sudo ufw --force enable"
-        else
-            echo "UFW está activo. Asegurando que OpenSSH esté permitido."
-            run_command "sudo ufw allow OpenSSH"
-            run_command "sudo ufw reload"
-        fi
-        echo "✓ UFW configurado para SSH."
-        echo "Estado actual del UFW:"
-        sudo ufw status || echo "No se pudo obtener el estado de UFW."
-        
-    elif command -v firewall-cmd &> /dev/null; then
-        echo "FirewallD detectado. Configurando FirewallD..."
-        if sudo systemctl is-active --quiet firewalld; then
-            echo "FirewallD está activo. Añadiendo servicio SSH y recargando."
-            run_command "sudo firewall-cmd --permanent --add-service=ssh"
-            run_command "sudo firewall-cmd --reload"
-        else
-            echo "FirewallD está inactivo. Habilitando y añadiendo servicio SSH."
-            run_command "sudo systemctl enable --now firewalld"
-            run_command "sudo firewall-cmd --permanent --add-service=ssh"
-            run_command "sudo firewall-cmd --reload"
-        fi
-        echo "✓ FirewallD configurado para SSH."
-        echo "Estado actual de FirewallD:"
-        sudo firewall-cmd --list-services || echo "No se pudo obtener la lista de servicios de FirewallD."
-        
-    else
-        echo "⚠️  No se detectó UFW ni FirewallD."
-        echo "OpenSSH Server está instalado y corriendo, pero no se pudo configurar el firewall automáticamente."
-        echo ""
-        echo "Si utilizas otro firewall (ej. iptables), deberás configurarlo manualmente para permitir el puerto 22:"
-        echo "  Ejemplo para iptables:"
-        echo "    sudo iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"
-        echo "    sudo iptables -A OUTPUT -p tcp --sport 22 -m conntrack --ctstate ESTABLISHED -j ACCEPT"
-        echo "  Para hacer las reglas persistentes:"
-        echo "    sudo apt install iptables-persistent  # En Debian/Ubuntu"
-        echo "    sudo netfilter-persistent save        # Guardar reglas"
-    fi
-    
-    # --- Información final ---
-    echo ""
-    echo "=== Configuración SSH Completada ==="
-    echo "✓ OpenSSH Server instalado y corriendo"
-    echo "✓ Puerto 22 configurado en el firewall (si está disponible)"
-    echo ""
-    echo "Información de conexión SSH:"
-    echo "  - Puerto: 22 (por defecto)"
-    echo "  - IP local: $(hostname -I | awk '{print $1}' 2>/dev/null || echo 'No disponible')"
-    echo "  - Comando de conexión desde otra máquina: ssh $(whoami)@$(hostname -I | awk '{print $1}' 2>/dev/null || echo 'TU_IP')"
-    echo ""
-    echo "Nota: Asegúrate de tener configurada la autenticación por clave SSH o contraseña antes de conectarte remotamente."
-}
-
-
 # Funciones para herramientas adicionales
 
 install_oh_my_posh() {
@@ -2615,14 +2288,12 @@ show_menu() {
     echo " 14) Instalar Docker CLI (Engine, Compose, Buildx)"
     echo " 15) Instalar Docker Desktop"
     echo " 16) Instalar Fuentes (Cascadia Code, Caskaydia Cove Nerd Font)"
-    echo " 17) Configurar Firewall para SSH (Puerto 22)"
-    echo " 18) Instalar Visual Studio Code"
-    echo " 19) Instalar Warp Terminal - Requiere archivo .deb/rpm local"
-    echo " 20) Instalar Google Chrome Dev"
-    echo " 21) Instalar RustDesk"
-    echo " 22) Instalar Oh My Posh (Terminal personalizada)"
-    echo " 23) Instalar GitHub Copilot CLI"
-    echo " 24) Instalar TODAS las herramientas (usa NVM para Node.js)"
+    echo " 17) Instalar Visual Studio Code"
+    echo " 18) Instalar Warp Terminal - Requiere archivo .deb/rpm local"
+    echo " 19) Instalar Google Chrome Dev"
+    echo " 20) Instalar Oh My Posh (Terminal personalizada)"
+    echo " 21) Instalar GitHub Copilot CLI"
+    echo " 22) Instalar TODAS las herramientas (usa NVM para Node.js)"
     echo "  0) Salir"
     echo -n "Tu elección: "
 }
@@ -2654,12 +2325,10 @@ main() {
             16) install_fonts ;;
             17) install_vscode ;;
             18) install_warp_terminal ;;
-            19) install_rustdesk ;;
-            20) install_chrome_dev ;;
-            21) configure_firewall_ssh ;;
-            22) install_oh_my_posh ;;
-            23) install_copilot_cli ;;
-            24)
+            19) install_chrome_dev ;;
+            20) install_oh_my_posh ;;
+            21) install_copilot_cli ;;
+            22)
                 echo "Instalando todas las herramientas..."
                 update_system || { echo "Advertencia: Fallo al actualizar el sistema. Continuando con otras instalaciones."; }
                 install_basic_utilities || { echo "Fallo en utilidades básicas. Abortando 'Instalar Todo'."; exit 1; }
