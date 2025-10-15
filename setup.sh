@@ -700,14 +700,70 @@ install_bitwarden_cli() {
 
 install_tailscale() {
     print_header "Instalando Tailscale"
-    echo "Descargando y ejecutando el script de instalación oficial de Tailscale..."
-    if ! command -v curl &> /dev/null; then
-        echo "Error: 'curl' no está instalado. Por favor, instala curl para poder instalar Tailscale." >&2
-        return 1
-    fi
-    run_command "curl -fsSL https://tailscale.com/install.sh | sh"
-    echo "Tailscale ha sido instalado."
-    echo "Para iniciar y autenticar Tailscale, ejecuta el siguiente comando en tu terminal:"
+    
+    case $DISTRO in
+        ubuntu|debian|kali|parrot|zorin)
+            echo "Instalando Tailscale para Debian/Ubuntu/Zorin usando repositorio oficial..."
+            
+            # Instalar dependencias necesarias
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y curl gpg software-properties-common apt-transport-https"
+            
+            # Añadir clave GPG de Tailscale usando el nuevo método
+            echo "Añadiendo clave GPG de Tailscale..."
+            run_command "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null"
+            
+            # Añadir repositorio de Tailscale
+            echo "Configurando repositorio de Tailscale..."
+            run_command "curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list"
+            
+            # Actualizar e instalar Tailscale
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y tailscale"
+            ;;
+            
+        fedora)
+            echo "Instalando Tailscale para Fedora..."
+            run_command "sudo dnf config-manager --add-repo https://pkgs.tailscale.com/stable/fedora/tailscale.repo"
+            run_command "sudo dnf install -y tailscale"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando Tailscale para Arch Linux..."
+            run_command "sudo pacman -S --noconfirm tailscale"
+            ;;
+            
+        opensuse|sles)
+            echo "Instalando Tailscale para openSUSE..."
+            run_command "sudo zypper addrepo https://pkgs.tailscale.com/stable/opensuse/15.4/tailscale.repo"
+            run_command "sudo zypper refresh"
+            run_command "sudo zypper install -y tailscale"
+            ;;
+            
+        alpine)
+            echo "Instalando Tailscale para Alpine Linux..."
+            run_command "echo 'https://pkgs.tailscale.com/stable/alpine/tailscale.repo' | sudo tee -a /etc/apk/repositories"
+            run_command "wget -qO /etc/apk/keys/pkgs.tailscale.com.rsa.pub https://pkgs.tailscale.com/stable/alpine/tailscale.rsa.pub"
+            run_command "sudo apk update"
+            run_command "sudo apk add --no-cache tailscale"
+            ;;
+            
+        *)
+            echo "Distribución $DISTRO no soportada específicamente. Usando script de instalación oficial..."
+            if ! command -v curl &> /dev/null; then
+                echo "Error: 'curl' no está instalado. Por favor, instala curl para poder instalar Tailscale." >&2
+                return 1
+            fi
+            run_command "curl -fsSL https://tailscale.com/install.sh | sh"
+            ;;
+    esac
+    
+    # Habilitar el servicio
+    echo "Habilitando servicio de Tailscale..."
+    run_command "sudo systemctl enable --now tailscaled"
+    
+    echo "✓ Tailscale ha sido instalado correctamente."
+    echo "Para iniciar y autenticar Tailscale, ejecuta:"
     echo "  sudo tailscale up"
     echo "Sigue las instrucciones en el navegador para autenticarte con tu cuenta de Tailscale."
 }
