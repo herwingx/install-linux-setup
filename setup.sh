@@ -93,6 +93,35 @@ run_command() {
     fi
 }
 
+# --- Helpers: confirmación y registro ---
+LOG_FILE="$USER_HOME/.setup_install.log"
+
+log_action() {
+    # Añade una línea timestamped al log en el home del usuario
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+confirm() {
+    # Uso: confirm "Mensaje..."
+    local prompt="${1:-¿Deseas continuar? (y/N): }"
+    read -r -p "$prompt" ans
+    case "$ans" in
+        [Yy]|[Yy][Ee][Ss]|[Ss][Ii]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+confirm_strict() {
+    # Uso: confirm_strict "Mensaje" "TEXTO_ESPERADO"
+    local prompt="$1"
+    local expected="$2"
+    read -r -p "$prompt" ans
+    if [ "$ans" = "$expected" ]; then
+        return 0
+    fi
+    return 1
+}
+
 detect_distro_and_package_manager() {
     print_header "Detectando Distribución y Gestor de Paquetes..."
 
@@ -181,6 +210,12 @@ detect_distro_and_package_manager() {
 update_system() {
     print_header "Actualizando el Sistema"
     echo "Esto actualizará los índices de paquetes y luego realizará un upgrade completo."
+    if ! confirm "¿Deseas proceder con la actualización del sistema? (y/N): "; then
+        echo "Actualización del sistema cancelada por el usuario."
+        log_action "update_system: cancelado por usuario"
+        return 1
+    fi
+    log_action "update_system: iniciado"
     case $PACKAGE_MANAGER in
         apt)
             run_command "sudo apt update -y && sudo apt upgrade -y"
@@ -211,6 +246,7 @@ update_system() {
             ;;
     esac
     echo "Sistema actualizado."
+    log_action "update_system: completado"
 }
 
 install_basic_utilities() {
@@ -398,6 +434,7 @@ EOF
 
     echo "Configuración .gitconfig creada/actualizada en $GITCONFIG_PATH"
     echo "Verifica con: cat ~/.gitconfig"
+    log_action "configure_gitconfig: escrito $GITCONFIG_PATH"
 }
 
 generate_ssh_key() {
@@ -409,6 +446,7 @@ generate_ssh_key() {
         read -p "¿Deseas sobreescribirla? (y/N): " overwrite_key
         if [[ ! "$overwrite_key" =~ ^[Yy]$ ]]; then
             echo "Generación de clave SSH cancelada. Usando clave existente."
+            log_action "generate_ssh_key: cancelado (clave existente)"
             return 0
         fi
         echo "Sobreescribiendo clave existente..."
@@ -426,6 +464,7 @@ generate_ssh_key() {
     run_command "ssh-keygen -t rsa -b 4096 -C \"$SSH_EMAIL\""
 
     echo "Clave SSH generada en $SSH_KEY_PATH"
+    log_action "generate_ssh_key: generada $SSH_KEY_PATH"
     echo "Para añadir tu clave SSH al agente y usarla:"
     echo "  eval \"\$(ssh-agent -s)\""
     echo "  ssh-add ~/.ssh/id_rsa"
@@ -649,7 +688,7 @@ install_github_cli() {
             run_command "rm $TEMP_KEYRING_FILE"
             run_command "sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg"
             run_command "sudo mkdir -p -m 755 /etc/apt/sources.list.d"
-            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" | sudo tee /etc/apt/sour[...]
+            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null"
             run_command "sudo apt update -y"
             run_command "sudo apt install -y gh"
             ;;
@@ -989,6 +1028,13 @@ choose_docker_installation() {
 install_docker_cli() {
     print_header "Instalando Docker CLI (Engine, Compose, Buildx, containerd)"
 
+    if ! confirm "¿Realmente deseas instalar Docker (requiere sudo)? (y/N): "; then
+        echo "Instalación de Docker cancelada por el usuario."
+        log_action "install_docker_cli: cancelado por usuario"
+        return 1
+    fi
+    log_action "install_docker_cli: iniciado"
+
     case $DISTRO in
         ubuntu|debian|kali|parrot)
             echo "Configurando repositorio oficial de Docker para Debian/Ubuntu/Kali/Parrot..."
@@ -1010,7 +1056,7 @@ install_docker_cli() {
             fi
 
             echo "Añadiendo repositorio de Docker para $DISTRO_CODENAME..."
-            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${DISTRO_CODENAME} stable\" | sudo tee /etc/apt/[...]
+            run_command "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${DISTRO_CODENAME} stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null"
             
             run_command "sudo apt-get update -y"
             echo "Instalando Docker Engine y complementos..."
@@ -1273,7 +1319,7 @@ install_vscode() {
     fi
     
     case $DISTRO in
-        ubuntu|debian|kali|parrot)
+        ubuntu|debian|kali|parrot|zorin)
             echo "Instalando VS Code para Debian/Ubuntu usando repositorio oficial de Microsoft..."
             
             # Instalar dependencias necesarias
@@ -1292,155 +1338,798 @@ install_vscode() {
             
             # Añadir repositorio de VS Code
             echo "Configurando repositorio de VS Code..."
-            if [ ! -f /etc/apt/sources.list.d/vscode.list ]; then
-                run_command "echo \"deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main\" | sudo tee /etc/apt/sources.[...]
-            else
-                echo "✓ Repositorio de VS Code ya está configurado."
-            fi
+            run_command "echo \"deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main\" | sudo tee /etc/apt/sources.list.d/vscode.list > /dev/null"
             
-            # Actualizar e instalar
+            # Actualizar e instalar VS Code
             run_command "sudo apt update -y"
             run_command "sudo apt install -y code"
             ;;
             
         fedora)
             echo "Instalando VS Code para Fedora usando repositorio oficial de Microsoft..."
-            
-            # Importar clave GPG de Microsoft
-            echo "Importando clave GPG de Microsoft..."
             run_command "sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
-            
-            # Añadir repositorio de VS Code
-            echo "Configurando repositorio de VS Code..."
-            if [ ! -f /etc/yum.repos.d/vscode.repo ]; then
-                sudo bash -c 'cat > /etc/yum.repos.d/vscode.repo << EOF
-[code]
-name=Visual Studio Code
-baseurl=https://packages.microsoft.com/yumrepos/vscode
-enabled=1
-gpgcheck=1
-gpgkey=https://packages.microsoft.com/keys/microsoft.asc
-EOF'
-                echo "✓ Repositorio de VS Code configurado."
-            else
-                echo "✓ Repositorio de VS Code ya existe."
-            fi
-            
-            # Instalar VS Code
+            run_command "sudo sh -c 'echo -e \"[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc\" > /etc/yum.repos.d/vscode.repo'"
+            run_command "sudo dnf update -y"
             run_command "sudo dnf install -y code"
             ;;
             
         arch|manjaro)
-            echo "Instalando VS Code para Arch Linux..."
-            
-            # VS Code está disponible en AUR, usando el paquete visual-studio-code-bin
-            if command -v yay &> /dev/null; then
-                echo "Usando yay para instalar desde AUR..."
-                run_command "yay -S --noconfirm visual-studio-code-bin"
-            elif command -v paru &> /dev/null; then
-                echo "Usando paru para instalar desde AUR..."
-                run_command "paru -S --noconfirm visual-studio-code-bin"
-            else
-                echo "⚠️  No se encontró un helper de AUR (yay/paru)."
-                echo "Instalando desde el paquete snap como alternativa..."
-                if command -v snap &> /dev/null; then
-                    run_command "sudo snap install --classic code"
-                else
-                    echo "Error: Ni AUR helpers ni snap están disponibles." >&2
-                    echo "Por favor, instala VS Code manualmente desde https://code.visualstudio.com/"
-                    return 1
-                fi
-            fi
+            echo "Instalando VS Code para Arch Linux usando repositorio community..."
+            run_command "sudo pacman -Sy --noconfirm code"
             ;;
             
-        opensuse|sles)
+        opensuse)
             echo "Instalando VS Code para openSUSE usando repositorio oficial de Microsoft..."
-            
-            # Importar clave GPG
             run_command "sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
-            
-            # Añadir repositorio
-            echo "Configurando repositorio de VS Code..."
-            if ! sudo zypper lr | grep -q "vscode"; then
-                run_command "sudo zypper addrepo https://packages.microsoft.com/yumrepos/vscode vscode"
-                run_command "sudo zypper refresh"
-            else
-                echo "✓ Repositorio de VS Code ya existe."
-            fi
-            
-            # Instalar VS Code
+            run_command "sudo sh -c 'echo -e \"[code]\nname=Visual Studio Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ntype=rpm-md\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc\" > /etc/zypp/repos.d/vscode.repo'"
+            run_command "sudo zypper refresh"
             run_command "sudo zypper install -y code"
             ;;
             
         alpine)
-            echo "Instalando VS Code para Alpine Linux usando snap..."
-            
-            # Alpine no tiene un repositorio oficial, usamos snap
-            if ! command -v snap &> /dev/null; then
-                echo "Instalando snapd primero..."
-                run_command "sudo apk add --no-cache snapd"
-                run_command "sudo systemctl enable --now snapd"
-                run_command "sudo systemctl enable --now snapd.apparmor"
-            fi
-            
-            run_command "sudo snap install --classic code"
+            echo "Lo siento, VS Code no tiene soporte oficial para Alpine Linux."
+            echo "Puedes intentar usar VS Code OSS o Code-Server como alternativas."
+            return 1
             ;;
             
         *)
-            echo "Distribución $DISTRO no reconocida. Intentando instalación universal con snap..."
-            
-            if command -v snap &> /dev/null; then
-                run_command "sudo snap install --classic code"
-            else
-                echo "Error: Distribución no soportada y snap no está disponible." >&2
-                echo "Por favor, descarga VS Code manualmente desde:"
-                echo "  https://code.visualstudio.com/download"
-                return 1
-            fi
+            echo "Distribución no soportada oficialmente para VS Code."
+            echo "Puedes intentar descargar VS Code manualmente desde:"
+            echo "https://code.visualstudio.com/Download"
+            return 1
             ;;
     esac
     
-    # Verificar instalación
+    echo "Visual Studio Code instalado/actualizado."
+    echo "Versión instalada: $(code --version | head -n1)"
     echo ""
-    echo "=== Verificando instalación ==="
-    if command -v code &> /dev/null; then
-        echo "✓ Visual Studio Code instalado correctamente."
-        echo "Versión: $(code --version | head -n1)"
-        echo ""
-        echo "Para abrir VS Code:"
-        echo "  - Desde terminal: code"
-        echo "  - Desde terminal con carpeta: code ."
-        echo "  - Desde el menú de aplicaciones: Visual Studio Code"
-        echo ""
-        echo "Extensiones recomendadas para desarrollo:"
-        echo "  - GitLens"
-        echo "  - Prettier - Code formatter"
-        echo "  - Auto Rename Tag"
-        echo "  - Bracket Pair Colorizer 2"
-        echo "  - Material Icon Theme"
-        echo "  - Thunder Client (alternativa a Postman)"
-        echo ""
-        echo "Para instalar extensiones desde terminal:"
-        echo "  code --install-extension ms-vscode.vscode-json"
-    else
-        echo "❌ Error: VS Code no se instaló correctamente."
+    echo "Para iniciar VS Code:"
+    echo "  • Desde terminal: code"
+    echo "  • Desde el menú de aplicaciones: Visual Studio Code"
+    echo ""
+    echo "Extensiones recomendadas:"
+    echo "  • GitHub Copilot"
+    echo "  • GitHub Copilot Chat"
+    echo "  • GitLens"
+    echo "  • Thunder Client (REST API)"
+    echo "  • Python"
+    echo "  • Remote - SSH"
+    echo "  • Docker"
+    echo "  • Live Share"
+    echo ""
+    echo "Para instalar todas las extensiones recomendadas ejecuta:"
+    echo "  code --install-extension GitHub.copilot"
+    echo "  code --install-extension GitHub.copilot-chat"
+    echo "  code --install-extension eamodio.gitlens"
+    echo "  code --install-extension rangav.vscode-thunder-client"
+    echo "  code --install-extension ms-python.python"
+    echo "  code --install-extension ms-vscode-remote.remote-ssh"
+    echo "  code --install-extension ms-azuretools.vscode-docker"
+    echo "  code --install-extension MS-vsliveshare.vsliveshare"
+}
+
+
+show_menu() {
+    while true; do
+        print_header "Menú de Instalación y Configuración de Herramientas de Desarrollo"
+        echo "Por favor, selecciona una opción:"
+        echo "  1) Actualizar el Sistema (apt update & upgrade, dnf update, pacman -Syu, etc.)"
+        echo "  2) Instalar Utilidades Básicas de Linux y Git"
+        echo "  3) Configurar .gitconfig (Eduardo Macias, herwingmacias@gmail.com)"
+        echo "  4) Generar Clave SSH (RSA 4096-bit)"
+        echo "  5) Añadir Alias Personalizados a .bashrc"
+        echo "  6) Instalar NVM (Node Version Manager) y Node.js (Recomendado para desarrollo)"
+        echo "  7) Instalar Node.js y NPM Globalmente (sin NVM - ¡Advertencia de conflicto!)"
+        echo "  8) Instalar Gemini CLI"
+        echo "  9) Instalar GitHub CLI (gh)"
+        echo " 10) Instalar Bitwarden CLI"
+        echo " 11) Instalar Tailscale"
+        echo " 12) Instalar Brave Browser"
+        echo " 13) Instalar Cursor (AI Code Editor) - Requiere AppImage local"
+        echo " 14) Instalar Docker CLI (Engine, Compose, Buildx)"
+        echo " 15) Instalar Docker Desktop"
+        echo " 16) Instalar Fuentes (Cascadia Code, Caskaydia Cove Nerd Font)"
+        echo " 17) Configurar Firewall para SSH (Puerto 22)"
+        echo " 18) Instalar Visual Studio Code"
+        echo " 19) Instalar Warp Terminal - Requiere archivo .deb/rpm local"
+        echo " 20) Instalar Google Chrome Dev"
+        echo " 21) Instalar RustDesk"
+        echo " 22) Instalar Oh My Posh (Terminal personalizada)"
+        echo " 23) Instalar GitHub Copilot CLI"
+        echo " 24) Instalar TODAS las herramientas (usa NVM para Node.js)"
+        echo "  0) Salir"
+    echo -n "Tu elección: "
+    read -r choice
+    case $choice in
+            1) update_system ;;
+            2) install_basic_utilities ;;
+            3) configure_gitconfig ;;
+            4) generate_ssh_key ;;
+            5) add_bash_aliases ;;
+            6) install_nvm_node_npm ;;
+            7) install_nodejs_global_without_nvm ;;
+            8) install_gemini_cli ;;
+            9) install_github_cli ;;
+            10) install_bitwarden_cli ;;
+            11) install_tailscale ;;
+            12) install_brave_browser ;;
+            13) install_cursor_appimage ;;
+            14) install_docker_cli ;;
+            15) install_docker_desktop_with_dependencies ;;
+            16) install_fonts ;;
+            17) configure_firewall_ssh ;;
+            18) install_vscode ;;
+            19) install_warp_terminal ;;
+            20) install_chrome_dev ;;
+            21) install_rustdesk ;;
+            22) install_oh_my_posh ;;
+            23) install_copilot_cli ;;
+            24)
+                echo "ATENCIÓN: La opción 'Instalar TODAS las herramientas' realizará múltiples instalaciones y cambios en el sistema."
+                if ! confirm_strict "Para confirmar escribe 'YES' exactamente: " "YES"; then
+                    echo "Operación 'Instalar TODAS' cancelada por el usuario."
+                    log_action "install_all: cancelado por usuario"
+                    break
+                fi
+                echo "Instalando todas las herramientas..."
+                log_action "install_all: iniciado"
+                update_system || { echo "Advertencia: Fallo al actualizar el sistema. Continuando con otras instalaciones."; }
+                install_basic_utilities || { echo "Fallo en utilidades básicas. Abortando 'Instalar Todo'."; exit 1; }
+                
+                # Configuraciones fundamentales
+                configure_gitconfig || echo "Advertencia: Fallo en la configuración de .gitconfig. Continuando con otras instalaciones."
+                generate_ssh_key || echo "Advertencia: Fallo en la generación de clave SSH. Continuando con otras instalaciones."
+                add_bash_aliases || echo "Advertencia: Fallo al añadir alias a .bashrc. Continuando con otras instalaciones."
+                
+                # Entorno de desarrollo (Node.js como dependencia clave)
+                install_nvm_node_npm || { echo "Fallo en NVM/Node.js. Abortando 'Instalar Todo'."; exit 1; }
+                install_gemini_cli || echo "Advertencia: Fallo en Gemini CLI. Continuando con otras instalaciones."
+                install_bitwarden_cli || echo "Advertencia: Fallo en Bitwarden CLI. Continuando con otras instalaciones."
+                
+                # Otras herramientas
+                install_github_cli || echo "Advertencia: Fallo en GitHub CLI. Continuando con otras instalaciones."
+                install_tailscale || echo "Advertencia: Fallo en Tailscale. Continuando con otras instalaciones."
+                install_brave_browser || echo "Advertencia: Fallo en Brave Browser. Continuando con otras instalaciones."
+                install_cursor_appimage || echo "Advertencia: Fallo en Cursor AppImage. Asegúrate de que el AppImage esté en el directorio del script."
+                install_vscode || echo "Advertencia: Fallo en VS Code. Continuando con otras instalaciones."
+                install_warp_terminal || echo "Advertencia: Fallo en Warp Terminal. Continuando con otras instalaciones."
+                install_chrome_dev || echo "Advertencia: Fallo en Chrome Dev. Continuando con otras instalaciones."
+                install_rustdesk || echo "Advertencia: Fallo en RustDesk. Continuando con otras instalaciones."
+                choose_docker_installation || echo "Advertencia: Fallo en la instalación de Docker. Continuando con otras instalaciones."
+                configure_firewall_ssh || echo "Advertencia: Fallo en la configuración del firewall. Continuando con otras instalaciones."
+                install_fonts || echo "Advertencia: Fallo en la instalación de fuentes. Continuando con otras instalaciones."
+                install_oh_my_posh || echo "Advertencia: Fallo al instalar Oh My Posh. Continuando con otras instalaciones."
+                install_copilot_cli || echo "Advertencia: Fallo al instalar GitHub Copilot CLI. Continuando con otras instalaciones."
+                
+                echo -e "\n=============================================="
+                echo -e "  ¡Instalación de TODAS las herramientas completada!"
+                echo -e "  Por favor, revisa los mensajes anteriores para cualquier advertencia o paso manual."
+                echo -e "  Recuerda reiniciar tu sesión o sistema para que todos los cambios surtan efecto (especialmente Docker, NVM y alias)."
+                ;;
+            0) 
+                echo "Saliendo..."
+                exit 0 
+                ;;
+            *)
+                echo "Opción no válida. Intenta de nuevo."
+                ;;
+    esac
+    done
+}
+
+install_copilot_cli() {
+    print_header "Instalando GitHub Copilot CLI"
+
+    # Verificar si la CLI de Copilot ya está instalada
+    if command -v github-copilot-cli &> /dev/null; then
+        echo "✓ GitHub Copilot CLI ya está instalada."
+        github-copilot-cli --version || true
+        read -p "¿Deseas reinstalar GitHub Copilot CLI? (y/N): " reinstall_copilot
+        if [[ ! "$reinstall_copilot" =~ ^[Yy]$ ]]; then
+            echo "Instalación de GitHub Copilot CLI cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+    fi
+
+    # Verificar dependencias de Node.js
+    if ! check_node_npm_dependency; then
+        echo "❌ Se requiere Node.js y npm para instalar GitHub Copilot CLI."
+        echo "Por favor, instala Node.js primero usando la opción NVM o Global del menú."
         return 1
     fi
+
+    echo "Instalando GitHub Copilot CLI via npm..."
+    run_command "npm install -g @githubnext/github-copilot-cli"
+
+    # Verificar la instalación
+    if ! command -v github-copilot-cli &> /dev/null; then
+        echo "❌ Error: La instalación de GitHub Copilot CLI falló."
+        return 1
+    fi
+
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ GitHub Copilot CLI instalado exitosamente"
+    echo ""
+    echo "🚀 Para usar GitHub Copilot CLI:"
+    echo "  • git? - Ayuda con comandos git"
+    echo "  • gh? - Ayuda con GitHub CLI"
+    echo "  • shell? - Ayuda con comandos de shell"
+    echo "  • github-copilot-cli --help"
+    echo ""
+    echo "🔧 Configuración necesaria:"
+    echo "1. Ejecuta: github-copilot-cli auth"
+    echo "2. Sigue las instrucciones para autenticarte"
+    echo "3. Necesitas una suscripción activa a GitHub Copilot"
+    echo ""
+    echo "📋 Alias recomendados para .bashrc:"
+    echo "  alias '??'='github-copilot-cli what-the-shell'"
+    echo "  alias 'git?'='github-copilot-cli git-assist'"
+    echo "  alias 'gh?'='github-copilot-cli gh-assist'"
+    echo ""
+    echo "⚠️  Notas importantes:"
+    echo "  • La CLI requiere autenticación separada de VS Code"
+    echo "  • Algunos comandos pueden tardar en procesar"
+    echo "  • Las sugerencias son IA-generadas, verifica siempre"
+    echo ""
+    echo "🎯 Casos de uso típicos:"
+    echo "  • Convertir lenguaje natural a comandos"
+    echo "  • Obtener ayuda con comandos git complejos"
+    echo "  • Explorar características de GitHub CLI"
+    echo "  • Resolver problemas comunes de shell"
+    echo ""
+    echo "Para autenticarte ahora, ejecuta:"
+    echo "  github-copilot-cli auth"
 }
+
+install_oh_my_posh() {
+    print_header "Instalando Oh My Posh (Terminal personalizada)"
+
+    # Verificar si Oh My Posh ya está instalado
+    if command -v oh-my-posh &> /dev/null; then
+        echo "✓ Oh My Posh ya está instalado."
+        oh-my-posh --version || true
+        read -p "¿Deseas reinstalar Oh My Posh? (y/N): " reinstall_posh
+        if [[ ! "$reinstall_posh" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Oh My Posh cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+    fi
+
+    # Instalar dependencias necesarias
+    echo "Instalando dependencias..."
+    case $PACKAGE_MANAGER in
+        apt)
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y unzip curl wget"
+            ;;
+        dnf)
+            run_command "sudo dnf install -y unzip curl wget"
+            ;;
+        pacman)
+            run_command "sudo pacman -S --noconfirm unzip curl wget"
+            ;;
+        zypper)
+            run_command "sudo zypper install -y unzip curl wget"
+            ;;
+        apk)
+            run_command "sudo apk add --no-cache unzip curl wget"
+            ;;
+    esac
+
+    # Instalar Oh My Posh usando el instalador oficial
+    echo "Instalando Oh My Posh..."
+    run_command "curl -s https://ohmyposh.dev/install.sh | bash -s"
+
+    # Verificar la instalación
+    if ! command -v oh-my-posh &> /dev/null; then
+        echo "❌ Error: La instalación de Oh My Posh falló."
+        return 1
+    fi
+
+    # Crear directorio de temas
+    local POSH_THEMES_DIR="$USER_HOME/.poshthemes"
+    mkdir -p "$POSH_THEMES_DIR"
+
+    # Descargar temas
+    echo "Descargando temas..."
+    local THEMES_URL="https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/themes.zip"
+    wget -q --show-progress "$THEMES_URL" -O /tmp/themes.zip
+    unzip -o /tmp/themes.zip -d "$POSH_THEMES_DIR"
+    chmod u+rw "$POSH_THEMES_DIR"/*.json
+    rm /tmp/themes.zip
+
+    # Configurar .bashrc
+    echo "Configurando Oh My Posh en .bashrc..."
+    local BASHRC="$USER_HOME/.bashrc"
+    local THEME_PATH="$POSH_THEMES_DIR/jandedobbeleer.omp.json"
+
+    # Eliminar configuración anterior si existe
+    sed -i '/eval "$(oh-my-posh/d' "$BASHRC"
+
+    # Añadir nueva configuración
+    echo '# Oh My Posh configuration' >> "$BASHRC"
+    echo "eval \"\$(oh-my-posh init bash --config '$THEME_PATH')\"" >> "$BASHRC"
+
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ Oh My Posh instalado exitosamente"
+    echo ""
+    echo "🎨 Temas disponibles en: ~/.poshthemes/"
+    echo "   Tema actual: jandedobbeleer.omp.json"
+    echo ""
+    echo "📋 Para cambiar el tema, edita la línea en ~/.bashrc:"
+    echo "   eval \"\$(oh-my-posh init bash --config '\$HOME/.poshthemes/NOMBRE_TEMA.omp.json')\""
+    echo ""
+    echo "🚀 Comandos útiles:"
+    echo "  • Listar temas:    oh-my-posh theme list"
+    echo "  • Probar tema:     oh-my-posh init bash --config ~/.poshthemes/NOMBRE_TEMA.omp.json"
+    echo "  • Ver tema actual: oh-my-posh config export"
+    echo ""
+    echo "⚠️  Notas importantes:"
+    echo "  • Necesitas una fuente Nerd Font para los íconos"
+    echo "  • Reinicia tu terminal para ver los cambios"
+    echo "  • Algunos temas requieren más recursos que otros"
+    echo ""
+    echo "🎯 Temas recomendados:"
+    echo "  • jandedobbeleer.omp.json (por defecto)"
+    echo "  • atomic.omp.json"
+    echo "  • powerlevel10k_rainbow.omp.json"
+    echo "  • amro.omp.json"
+    echo "  • night-owl.omp.json"
+    echo ""
+    echo "Para aplicar los cambios en la sesión actual, ejecuta:"
+    echo "  source ~/.bashrc"
+}
+
+install_rustdesk() {
+    print_header "Instalando RustDesk (Alternativa a TeamViewer)"
+    
+    # Verificar arquitectura
+    local ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$ARCH" in
+        amd64|x86_64)
+            ARCH="amd64"
+            ;;
+        arm64|aarch64)
+            ARCH="arm64"
+            ;;
+        *)
+            echo "❌ Arquitectura $ARCH no soportada por RustDesk."
+            return 1
+            ;;
+    esac
+
+    # Verificar si RustDesk ya está instalado
+    if command -v rustdesk &> /dev/null; then
+        echo "✓ RustDesk ya está instalado."
+        rustdesk --version || true
+        read -p "¿Deseas reinstalar RustDesk? (y/N): " reinstall_rustdesk
+        if [[ ! "$reinstall_rustdesk" =~ ^[Yy]$ ]]; then
+            echo "Instalación de RustDesk cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+    fi
+
+    # Crear directorio temporal
+    local TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
+
+    case $DISTRO in
+        ubuntu|debian|kali|parrot|zorin)
+            echo "Instalando RustDesk para Debian/Ubuntu..."
+            
+            # Obtener la última versión
+            echo "Descargando la última versión de RustDesk..."
+            LATEST_URL=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep "browser_download_url.*${ARCH}.deb\"" | cut -d '"' -f 4)
+            
+            if [ -z "$LATEST_URL" ]; then
+                echo "❌ Error: No se pudo encontrar la última versión de RustDesk."
+                return 1
+            fi
+            
+            wget -q --show-progress "$LATEST_URL" -O rustdesk.deb
+            
+            # Instalar dependencias y RustDesk
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y ./rustdesk.deb"
+            ;;
+            
+        fedora)
+            echo "Instalando RustDesk para Fedora..."
+            
+            # Obtener la última versión
+            echo "Descargando la última versión de RustDesk..."
+            LATEST_URL=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep "browser_download_url.*x86_64.rpm\"" | cut -d '"' -f 4)
+            
+            if [ -z "$LATEST_URL" ]; then
+                echo "❌ Error: No se pudo encontrar la última versión de RustDesk."
+                return 1
+            fi
+            
+            wget -q --show-progress "$LATEST_URL" -O rustdesk.rpm
+            
+            # Instalar RustDesk
+            run_command "sudo dnf install -y ./rustdesk.rpm"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando RustDesk para Arch Linux..."
+            
+            # Verificar si yay está instalado
+            if ! command -v yay &> /dev/null; then
+                echo "Necesitas yay para instalar RustDesk en Arch Linux."
+                read -p "¿Deseas instalar yay? (y/N): " install_yay
+                if [[ "$install_yay" =~ ^[Yy]$ ]]; then
+                    run_command "sudo pacman -S --needed --noconfirm base-devel git"
+                    git clone https://aur.archlinux.org/yay.git
+                    cd yay
+                    makepkg -si --noconfirm
+                    cd ..
+                    rm -rf yay
+                else
+                    echo "No se puede instalar RustDesk sin yay."
+                    return 1
+                fi
+            fi
+            
+            # Instalar RustDesk usando yay
+            run_command "yay -S --noconfirm rustdesk-bin"
+            ;;
+            
+        opensuse)
+            echo "Instalando RustDesk para openSUSE..."
+            
+            # Obtener la última versión
+            echo "Descargando la última versión de RustDesk..."
+            LATEST_URL=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep "browser_download_url.*x86_64.rpm\"" | cut -d '"' -f 4)
+            
+            if [ -z "$LATEST_URL" ]; then
+                echo "❌ Error: No se pudo encontrar la última versión de RustDesk."
+                return 1
+            fi
+            
+            wget -q --show-progress "$LATEST_URL" -O rustdesk.rpm
+            
+            # Instalar RustDesk
+            run_command "sudo zypper install -y ./rustdesk.rpm"
+            ;;
+            
+        *)
+            echo "❌ La instalación automática de RustDesk no está soportada para $DISTRO."
+            echo "Por favor, visita: https://github.com/rustdesk/rustdesk/releases"
+            echo "Y descarga la versión apropiada para tu sistema."
+            ;;
+    esac
+
+    # Limpiar archivos temporales
+    cd - > /dev/null
+    rm -rf "$TEMP_DIR"
+
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ RustDesk instalado exitosamente"
+    echo ""
+    echo "🚀 Para usar RustDesk:"
+    echo "  • Desde terminal: rustdesk"
+    echo "  • Desde el menú de aplicaciones: RustDesk"
+    echo ""
+    echo "🔧 Características principales:"
+    echo "  • Control remoto gratuito y de código abierto"
+    echo "  • No requiere configuración de router"
+    echo "  • Soporte para transferencia de archivos"
+    echo "  • Chat integrado durante sesiones"
+    echo "  • Opción de usar servidor propio"
+    echo ""
+    echo "⚠️  Notas importantes:"
+    echo "  • En el primer inicio, RustDesk generará un ID único"
+    echo "  • Comparte este ID para permitir conexiones remotas"
+    echo "  • Configura una contraseña de acceso segura"
+    echo "  • Considera usar un servidor RustDesk propio para mayor privacidad"
+    echo ""
+    echo "📋 Para mayor seguridad:"
+    echo "  • Usa contraseñas temporales para cada sesión"
+    echo "  • Verifica siempre quién se conecta"
+    echo "  • Cierra RustDesk cuando no lo necesites"
+    echo "  • Mantén el software actualizado"
+}
+
+install_chrome_dev() {
+    print_header "Instalando Google Chrome Dev"
+
+    # Verificar si Chrome Dev ya está instalado
+    if command -v google-chrome-unstable &> /dev/null; then
+        echo "✓ Google Chrome Dev ya está instalado."
+        google-chrome-unstable --version || true
+        read -p "¿Deseas reinstalar Chrome Dev? (y/N): " reinstall_chrome
+        if [[ ! "$reinstall_chrome" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Chrome Dev cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+    fi
+
+    case $DISTRO in
+        ubuntu|debian|kali|parrot|zorin)
+            echo "Instalando Google Chrome Dev para Debian/Ubuntu..."
+            
+            # Instalar dependencias necesarias
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y wget gnupg2 apt-transport-https ca-certificates"
+            
+            # Añadir clave y repositorio de Google
+            echo "Añadiendo clave y repositorio de Google..."
+            if [ ! -f /etc/apt/keyrings/google-chrome.gpg ]; then
+                run_command "wget -qO- https://dl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg"
+            fi
+            
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
+            
+            # Instalar Chrome Dev
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y google-chrome-unstable"
+            ;;
+            
+        fedora)
+            echo "Instalando Google Chrome Dev para Fedora..."
+            
+            # Añadir repositorio de Google Chrome
+            if [ ! -f /etc/yum.repos.d/google-chrome.repo ]; then
+                local REPO_CONFIG="[google-chrome]
+name=google-chrome
+baseurl=http://dl.google.com/linux/chrome/rpm/stable/\$basearch
+enabled=1
+gpgcheck=1
+gpgkey=https://dl.google.com/linux/linux_signing_key.pub"
+                echo "$REPO_CONFIG" | sudo tee /etc/yum.repos.d/google-chrome.repo
+            fi
+            
+            # Instalar Chrome Dev
+            run_command "sudo dnf install -y google-chrome-unstable"
+            ;;
+            
+        arch|manjaro)
+            echo "Instalando Google Chrome Dev para Arch Linux..."
+            
+            # Verificar si yay está instalado
+            if ! command -v yay &> /dev/null; then
+                echo "Necesitas yay para instalar Chrome Dev en Arch Linux."
+                read -p "¿Deseas instalar yay? (y/N): " install_yay
+                if [[ "$install_yay" =~ ^[Yy]$ ]]; then
+                    run_command "sudo pacman -S --needed --noconfirm base-devel git"
+                    git clone https://aur.archlinux.org/yay.git
+                    cd yay
+                    makepkg -si --noconfirm
+                    cd ..
+                    rm -rf yay
+                else
+                    echo "No se puede instalar Chrome Dev sin yay."
+                    return 1
+                fi
+            fi
+            
+            # Instalar Chrome Dev usando yay
+            run_command "yay -S --noconfirm google-chrome-dev"
+            ;;
+            
+        opensuse)
+            echo "Instalando Google Chrome Dev para openSUSE..."
+            
+            # Añadir repositorio de Google Chrome
+            run_command "sudo zypper addrepo http://dl.google.com/linux/chrome/rpm/stable/x86_64 Google-Chrome"
+            run_command "sudo rpm --import https://dl.google.com/linux/linux_signing_key.pub"
+            
+            # Instalar Chrome Dev
+            run_command "sudo zypper refresh"
+            run_command "sudo zypper install -y google-chrome-unstable"
+            ;;
+            
+        *)
+            echo "❌ Lo siento, la instalación automática de Chrome Dev no está soportada para $DISTRO."
+            echo "Por favor, visita: https://www.google.com/chrome/dev/"
+            echo "Y sigue las instrucciones de instalación manual para tu distribución."
+            return 1
+            ;;
+    esac
+
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ Google Chrome Dev instalado exitosamente"
+    echo ""
+    echo "🚀 Para usar Chrome Dev:"
+    echo "  • Desde terminal: google-chrome-unstable"
+    echo "  • Desde el menú de aplicaciones: Google Chrome Dev"
+    echo ""
+    echo "⚠️  Notas importantes:"
+    echo "  • Chrome Dev es una versión inestable para desarrolladores"
+    echo "  • Puede contener errores y características experimentales"
+    echo "  • Se actualiza frecuentemente (casi diariamente)"
+    echo "  • No se recomienda como navegador principal"
+    echo ""
+    echo "🔧 Configuración recomendada:"
+    echo "  • Habilitar las Chrome DevTools experiments"
+    echo "  • Activar las flags experimentales según necesidades"
+    echo "  • Considerar perfiles separados para pruebas"
+}
+
 install_warp_terminal() {
     print_header "Instalando Warp Terminal"
-    
-    echo "📁 NOTA: Esta función busca archivos de instalación locales de Warp Terminal"
-    echo "en el mismo directorio donde ejecutas este script."
+
+    echo "📁 NOTA: Esta función busca el archivo .deb/.rpm de Warp en el directorio actual."
     echo ""
-    echo "Para instalar Warp Terminal necesitas:"
-    echo "  • Para Ubuntu/Debian: archivo .deb (ej: warp-terminal_*.deb)"
-    echo "  • Para Fedora/RHEL: archivo .rpm (ej: warp-terminal_*.rpm)"
-    echo ""
-    echo "Descarga el archivo apropiado desde https://www.warp.dev/ y colócalo"
-    echo "en este directorio antes de ejecutar esta opción."
+    echo "💾 Para instalar Warp necesitas:"
+    echo "  • Archivo .deb (Debian/Ubuntu) o .rpm (Fedora) de Warp"
+    echo "  • Descarga desde: https://www.warp.dev/linux"
+    echo "  • Coloca el archivo en este directorio: $(pwd)"
     echo ""
     
-    # Verificar si Warp Terminal ya está instalado
-    if command -v warp-terminal &>
-# (archivo continuado — por brevedad no se muestran más líneas aquí, el cambio principal fue mover la llamada a check_system_requirements y el trap dentro de main)
+    # Verificar si Warp ya está instalado
+    if command -v warp &> /dev/null; then
+        echo "✓ Warp ya está instalado."
+        warp --version || true
+        read -p "¿Deseas reinstalar Warp? (y/N): " reinstall_warp
+        if [[ ! "$reinstall_warp" =~ ^[Yy]$ ]]; then
+            echo "Instalación de Warp cancelada."
+            return 0
+        fi
+        echo "Procediendo con la reinstalación..."
+    fi
+
+    case $DISTRO in
+        ubuntu|debian|kali|parrot|zorin)
+            # Buscar archivo .deb de Warp
+            local WARP_DEB=$(find . -maxdepth 1 -type f -name "warp*.deb" | head -n1)
+            
+            if [ -z "$WARP_DEB" ]; then
+                echo "❌ Error: No se encontró ningún archivo .deb de Warp en el directorio actual."
+                echo ""
+                echo "📥 Para instalar Warp:"
+                echo "1. Visita https://www.warp.dev/linux"
+                echo "2. Descarga la versión .deb para Ubuntu/Debian"
+                echo "3. Coloca el archivo en este directorio: $(pwd)"
+                echo "4. Ejecuta nuevamente esta opción"
+                return 1
+            fi
+
+            echo "✓ Archivo .deb de Warp encontrado: $WARP_DEB"
+            echo "Instalando Warp..."
+            
+            # Instalar dependencias si es necesario
+            run_command "sudo apt update -y"
+            run_command "sudo apt install -y ./\"$WARP_DEB\""
+            ;;
+            
+        fedora)
+            # Buscar archivo .rpm de Warp
+            local WARP_RPM=$(find . -maxdepth 1 -type f -name "warp*.rpm" | head -n1)
+            
+            if [ -z "$WARP_RPM" ]; then
+                echo "❌ Error: No se encontró ningún archivo .rpm de Warp en el directorio actual."
+                echo ""
+                echo "📥 Para instalar Warp:"
+                echo "1. Visita https://www.warp.dev/linux"
+                echo "2. Descarga la versión .rpm para Fedora"
+                echo "3. Coloca el archivo en este directorio: $(pwd)"
+                echo "4. Ejecuta nuevamente esta opción"
+                return 1
+            fi
+
+            echo "✓ Archivo .rpm de Warp encontrado: $WARP_RPM"
+            echo "Instalando Warp..."
+            run_command "sudo dnf install -y ./\"$WARP_RPM\""
+            ;;
+            
+        *)
+            echo "❌ Lo siento, Warp Terminal solo está disponible oficialmente para:"
+            echo "  • Ubuntu/Debian y derivados (.deb)"
+            echo "  • Fedora (.rpm)"
+            echo ""
+            echo "📋 Para otras distribuciones:"
+            echo "  • Visita https://www.warp.dev/linux"
+            echo "  • Comprueba si hay alternativas de instalación"
+            echo "  • Considera usar un administrador de paquetes alternativo"
+            return 1
+            ;;
+    esac
+
+    echo ""
+    echo "=== Instalación completada ==="
+    echo "✅ Warp Terminal instalado exitosamente"
+    echo ""
+    echo "🚀 Para usar Warp:"
+    echo "  • Desde terminal: warp"
+    echo "  • Desde el menú de aplicaciones: Warp"
+    echo ""
+    echo "🎯 Características principales de Warp:"
+    echo "  • Terminal moderna con AI integrada"
+    echo "  • Autocompletado inteligente"
+    echo "  • Temas y personalización"
+    echo "  • Blocks para organizar comandos"
+    echo "  • Integración con workflows"
+    echo ""
+    echo "⚠️  Notas importantes:"
+    echo "  • En el primer inicio, deberás configurar tu cuenta"
+    echo "  • Algunas características requieren una cuenta"
+    echo "  • Verifica la configuración de temas y fuentes"
+}
+
+configure_firewall_ssh() {
+    print_header "Configurando Firewall para SSH (Puerto 22)"
+
+    # Verificar si UFW está instalado
+    if ! command -v ufw &> /dev/null; then
+        echo "UFW no está instalado. Instalando UFW..."
+        case $PACKAGE_MANAGER in
+            apt)
+                run_command "sudo apt update -y"
+                run_command "sudo apt install -y ufw"
+                ;;
+            dnf)
+                run_command "sudo dnf install -y ufw"
+                ;;
+            pacman)
+                run_command "sudo pacman -S --noconfirm ufw"
+                ;;
+            zypper)
+                run_command "sudo zypper install -y ufw"
+                ;;
+            *)
+                echo "No se pudo instalar UFW. Por favor, instálalo manualmente."
+                return 1
+                ;;
+        esac
+    fi
+
+    echo "Verificando estado actual de UFW..."
+    sudo ufw status verbose
+
+    # Asegurar que UFW está habilitado
+    if ! sudo ufw status | grep -q "Status: active"; then
+        echo "Habilitando UFW..."
+        
+        # Añadir regla por defecto para SSH antes de habilitar
+        echo "Añadiendo regla para permitir SSH (puerto 22)..."
+        run_command "sudo ufw allow 22/tcp comment 'SSH access'"
+        
+        # Habilitar UFW
+        echo "y" | sudo ufw enable
+    else
+        echo "UFW ya está habilitado."
+        
+        # Verificar si la regla de SSH ya existe
+        if ! sudo ufw status | grep -q "22/tcp"; then
+            echo "Añadiendo regla para permitir SSH (puerto 22)..."
+            run_command "sudo ufw allow 22/tcp comment 'SSH access'"
+        else
+            echo "La regla para SSH (puerto 22) ya existe."
+        fi
+    fi
+
+    # Mostrar estado final
+    echo ""
+    echo "Estado actual del firewall:"
+    sudo ufw status verbose
+    echo ""
+    echo "✓ Configuración del firewall completada."
+    echo "  • Puerto 22 (SSH) está abierto"
+    echo "  • UFW está habilitado y funcionando"
+    echo ""
+    echo "Para gestionar otras reglas del firewall:"
+    echo "  • Añadir regla:    sudo ufw allow <puerto>[/<protocolo>]"
+    echo "  • Eliminar regla:  sudo ufw delete allow <puerto>[/<protocolo>]"
+    echo "  • Ver estado:      sudo ufw status verbose"
+    echo "  • Deshabilitar:    sudo ufw disable"
+    echo "  • Habilitar:       sudo ufw enable"
+}
+
+
+main() {
+    detect_distro_and_package_manager
+    show_menu
+}
+
+# Ejecutar el script
+main "$@"
