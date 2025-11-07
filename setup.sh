@@ -486,13 +486,16 @@ add_bash_aliases() {
         "alias off='sudo shutdown now'"
         "alias rb='sudo reboot now'"
         "alias tldr='tldr --color=always'"
-        "
-        # Git aliases"
         "alias gs='git status'"
         "alias ga='git add'"
         "alias gc='git commit -m'"
         "alias gp='git push'"
         "alias gl='git pull'"
+        "alias .='cd'"
+        "alias ..='cd ..'"
+        "alias ...='cd ../../'"
+        "alias f='find . -type f -name'"
+        "alias reload='exec bash'"
     )
 
     echo "Añadiendo alias a $BASHRC_PATH..."
