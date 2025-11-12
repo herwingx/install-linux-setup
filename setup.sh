@@ -239,7 +239,7 @@ configure_gitconfig() {
 		defaultBranch = main
 	[alias]
 		s = status -s -b
-		lg = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C(reset)' --all
+		lg = log --graph --abbrev-commit --decorate --format=format:'%C(bold blue)%h%C(reset) - %C(bold green)(%ar)%C(reset) %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%C(bold yellow)%d%C_RESET)' --all
 		edit = commit --amend
 		clone-shallow = clone --depth 1
 	[pull]
@@ -309,6 +309,27 @@ install_bitwarden_cli() {
     log_action "install_bitwarden_cli: completado"
 }
 
+install_brave_browser() {
+    print_header "Instalando Navegador Brave"
+    if command -v brave-browser &>/dev/null; then
+        if ! confirm "Brave Browser ya está instalado. ¿Deseas reinstalar? (y/N): "; then
+            return 0
+        fi
+    fi
+    printf "Instalando Brave Browser usando el script oficial...\n"
+    if ! run_command curl -fsS https://dl.brave.com/install.sh -o /tmp/install-brave.sh; then
+        printf "${C_RED}Error al descargar el script de Brave.${C_RESET}\n"
+        return 1
+    fi
+    
+    # El script oficial de Brave maneja sudo internamente.
+    run_command sudo sh /tmp/install-brave.sh
+    rm /tmp/install-brave.sh
+
+    printf "${C_GREEN}✓ Navegador Brave instalado correctamente.${C_RESET}\n"
+    log_action "install_brave_browser: completado"
+}
+
 install_copilot_cli() {
     print_header "Instalando GitHub Copilot CLI"
     if ! check_node_npm_dependency; then return 1; fi
@@ -332,12 +353,12 @@ install_docker() {
     fi
 
     printf "Instalando Docker Engine usando el script oficial...\n"
-    if ! run_command "curl -fsSL https://get.docker.com -o /tmp/get-docker.sh"; then
+    if ! run_command curl -fsSL https://get.docker.com -o /tmp/get-docker.sh; then
         printf "${C_RED}Error al descargar el script de Docker.${C_RESET}\n"
         return 1
     fi
     
-    run_command "sudo sh /tmp/get-docker.sh"
+    run_command sudo sh /tmp/get-docker.sh
     rm /tmp/get-docker.sh
 
     printf "Añadiendo usuario '%s' al grupo 'docker'...\n" "$USER"
@@ -384,7 +405,7 @@ install_nvm_node_npm() {
         printf "NVM ya está instalado. Omitiendo descarga.\n"
     else
         printf "Instalando NVM...\n"
-        run_command "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+        run_command curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
     fi
     
     load_nvm
@@ -408,7 +429,7 @@ install_nodejs_global_without_nvm() {
     case $PACKAGE_MANAGER in
         apt)
             printf "Configurando repositorio de NodeSource...\n"
-            run_command "curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -"
+            run_command curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
             run_command sudo apt-get install -y nodejs
             ;;
         *)
@@ -419,6 +440,40 @@ install_nodejs_global_without_nvm() {
     printf "${C_GREEN}✓ Node.js y NPM instalados globalmente.${C_RESET}\n"
     log_action "install_nodejs_global_without_nvm: completado"
 }
+
+install_oh_my_posh() {
+    print_header "Instalando y Configurando Oh My Posh"
+    local bashrc_path="$USER_HOME/.bashrc"
+
+    printf "Instalando Oh My Posh...\n"
+    if ! run_command curl -s https://ohmyposh.dev/install.sh -o /tmp/install-omp.sh; then
+        printf "${C_RED}Error al descargar el script de Oh My Posh.${C_RESET}\n"
+        return 1
+    fi
+    run_command bash /tmp/install-omp.sh
+    rm /tmp/install-omp.sh
+    
+    printf "Configurando Oh My Posh en .bashrc...\n"
+    local omp_block=$(cat <<EOF
+
+# --- Configuración Oh My Posh ---
+eval "\$(oh-my-posh init bash --config 'powerline')"
+# --- Fin de Configuración Oh My Posh ---
+EOF
+)
+
+    if grep -q "# --- Configuración Oh My Posh ---" "$bashrc_path"; then
+        printf "${C_YELLOW}Configuración de Oh My Posh ya detectada en .bashrc. Omitiendo.${C_RESET}\n"
+    else
+        printf "Añadiendo configuración de Oh My Posh a %s...\n" "$bashrc_path"
+        echo "$omp_block" >> "$bashrc_path"
+        printf "${C_GREEN}✓ Configuración de Oh My Posh añadida a .bashrc.${C_RESET}\n"
+    fi
+
+    printf "Para que Oh My Posh surta efecto, ejecuta: ${C_WHITE}exec bash${C_RESET} o reinicia tu terminal.\n"
+    log_action "install_oh_my_posh: completado"
+}
+
 
 update_system() {
     print_header "Actualizando el Sistema"
@@ -498,6 +553,8 @@ run_full_installation() {
     run_install_step "Instalar Bitwarden CLI" false install_bitwarden_cli
     run_install_step "Instalar GitHub Copilot CLI" false install_copilot_cli
     run_install_step "Instalar Docker" false install_docker
+    run_install_step "Instalar Navegador Brave" false install_brave_browser
+    run_install_step "Instalar Oh My Posh" false install_oh_my_posh
 
     print_header "🎉 ¡Instalación Completa Finalizada! 🎉"
     printf "Revisa los mensajes anteriores para cualquier advertencia.\n"
@@ -526,7 +583,9 @@ show_menu() {
         printf "${C_CYAN}10)${C_RESET} Instalar Bitwarden CLI\n"
         printf "${C_CYAN}11)${C_RESET} Instalar Docker Engine (CLI)\n"
         printf "${C_CYAN}12)${C_RESET} Instalar GitHub Copilot CLI\n"
-        printf "\n${C_YELLOW}13)${C_RESET} ${C_WHITE}INSTALAR TODO${C_RESET}\n"
+        printf "${C_CYAN}13)${C_RESET} Instalar Navegador Brave\n"
+        printf "${C_CYAN}14)${C_RESET} Instalar Oh My Posh\n"
+        printf "\n${C_YELLOW}15)${C_RESET} ${C_WHITE}INSTALAR TODO${C_RESET}\n"
         printf "${C_RED} 0)${C_RESET} Salir\n"
         printf "${C_BLUE}======================================================${C_RESET}\n"
 
@@ -545,7 +604,9 @@ show_menu() {
             10) install_bitwarden_cli ;;
             11) install_docker ;;
             12) install_copilot_cli ;;
-            13) run_full_installation ;;
+            13) install_brave_browser ;;
+            14) install_oh_my_posh ;;
+            15) run_full_installation ;;
             0)
                 printf "Saliendo...\n"
                 exit 0
