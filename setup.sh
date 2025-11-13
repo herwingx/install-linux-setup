@@ -234,7 +234,7 @@ configure_gitconfig() {
     cat <<-EOF > "$gitconfig_path"
 	[user]
 		name = Eduardo Macias
-		email = herwingbussiness@gmail.com
+		email = herwingx@proton.me
 	[init]
 		defaultBranch = main
 	[alias]
