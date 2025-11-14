@@ -203,7 +203,7 @@ alias ..='cd ..'
 alias ...='cd ../../'
 alias f='find . -type f -name'
 alias reload='exec bash'
-alias path='echo -e ${C_CYAN}\$PATH:${C_RESET} && tr ":" "\n" <<< "\$PATH"'
+alias path='echo -e "${C_CYAN}=== PATH ===${C_RESET}" && tr ":" "\n" <<< "$PATH" | nl -v1 -w2 -s") ${C_GREEN}" && echo -e "${C_RESET}"'
 # --- Fin de alias personalizados ---
 EOF
 )
